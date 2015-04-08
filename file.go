@@ -47,15 +47,15 @@ func (self *File) GetChecksum() ([]byte, error) {
 
 
 func (self *File) Distill(store Store) (sgn *Signature, err error){
-	var aweak, bweak, weak WeakHash
-	var blockOffset int64
-	var fileOffset, matchOffset int64
+	var aweak, bweak, weak, oldWeak WeakHash
+	var fileOffset int64
 	var isRolling bool
 	var data [BlockSize]byte
+	var readSize, matchOffset int
+	blockOffset := BlockSize - 1 // Will bootstrap read
 	oldBlock := Block{}
 	fullBlock := Block{}
 	newBlock  := Block{}
-	readSize := BlockSize
 
 	// Open file and get his size
 	fd, err := os.Open(self.Path)
@@ -77,48 +77,50 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 	// existing data in the store) then we put the suffix in the
 	// signature.
 	for fileOffset < info.Size() {
-		if blockOffset == 0 || matchOffset > 0 {
-			println("init")
+		// We read a new block if we reach the end of the current
+		// block or if there is a match
+		if blockOffset == BlockSize - 1 || matchOffset > 0 {
+			if matchOffset == 0 && len(oldBlock) > 0  {
+				// Put unknown oldBlock in store
+				strong := GetStrongHash(oldBlock)
+				store.AddBlock(oldWeak, strong, oldBlock)
+				sgn.AddHash(oldWeak, strong)
+			}
 			// Read new block
 			readSize, _ = fd.Read(data[:])
-			isRolling = false
 			fileOffset += BlockSize
 			if matchOffset > 0 {
-				// Skip matched data
+				// Jump over matched data
+				isRolling = false
 				blockOffset = BlockSize - matchOffset
+				matchOffset = 0
+			} else {
+				blockOffset = 0
 			}
+			// Update old & new
+			oldWeak = weak
 			oldBlock = newBlock
 			newBlock = Block(data[:])
-			matchOffset = 0
 
-		} else if blockOffset == BlockSize {
-			println("move")
-			// Put oldBlock in store
-			strong := GetStrongHash(oldBlock)
-			store.AddBlock(weak, strong, oldBlock) // FIXME not the best place
-			sgn.AddHash(weak, strong)
-
-			// Read new block
-			readSize, _ = fd.Read(data[:])
-			oldBlock = newBlock
-			newBlock = Block(data[:])
-			blockOffset = 0
-			matchOffset = 0
-			fileOffset += BlockSize
+			if readSize < BlockSize {
+				// last read reached end of file
+				// Store previous block
+				strong := GetStrongHash(oldBlock)
+				store.AddBlock(weak, strong, oldBlock)
+				sgn.AddHash(weak, strong)
+				// Store tail
+				sgn.AddData(newBlock[0:readSize])
+				return sgn, nil
+			}
 		}
 
-		if readSize < BlockSize {
-			// last read reached end of file
-			sgn.AddData(newBlock[0:readSize])
-			return sgn, nil
-		}
-
+		// Update weak hash
 		if !isRolling {
 			// Init weak hash
 			weak, aweak, bweak = GetWeakHash(newBlock)
 			isRolling = true
 			// We have consumed the block, fast forward to next
-			blockOffset = BlockSize - 1
+			blockOffset = BlockSize - 2
 		} else {
 			// Roll
 			pushByte := newBlock[blockOffset]
@@ -127,6 +129,8 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 			bweak = (bweak - (WeakHash(BlockSize) * WeakHash(pushByte)) + aweak) % M
 			weak = aweak + (M * bweak)
 		}
+
+		// handle weak hash match
 		if store.SearchWeak(weak) {
 			copy(concat(
 				newBlock[0:blockOffset],
@@ -135,16 +139,15 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 			strong := GetStrongHash(fullBlock)
 			blockFound := store.SearchStrong(strong)
 			if blockFound {
+				// add partial data
+				sgn.AddData(oldBlock[0:blockOffset])
+				// add matching block
 				sgn.AddHash(weak, strong)
 				matchOffset = blockOffset
-				// Jump to the end
-				blockOffset = BlockSize
-				continue
 			}
 		}
 		blockOffset += 1
 	}
-
 	return sgn, nil
 }
 
@@ -179,11 +182,11 @@ func concat(s...[]byte) []byte {
 
 
 func (self *Signature) AddData(data []byte) {
-	println("ADDDATA")
+	println("SGN:ADDDATA")
 
 }
 
 func (self *Signature) AddHash(weak WeakHash, strong StrongHash) {
-	println("ADDHASH")
+	println("SGN:ADDHASH")
 
 }

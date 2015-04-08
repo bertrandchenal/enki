@@ -12,8 +12,12 @@ type DummyStore struct {
 }
 
 func (self DummyStore) AddBlock(weak WeakHash, strong StrongHash, data Block) {
-	self.WeakMap[weak] = true
-	self.BlockMap[strong] = data
+	_, present := self.BlockMap[strong]
+	if !present {
+		println("STORE:ADDBLOCK")
+		self.WeakMap[weak] = true
+		self.BlockMap[strong] = data
+	}
 }
 
 func (self DummyStore) SearchStrong(strong StrongHash) bool {
