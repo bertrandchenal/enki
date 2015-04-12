@@ -5,6 +5,7 @@ import (
 	"os"
 	"io"
 	"crypto/md5"
+	_ "encoding/hex"
 )
 
 const (
@@ -48,14 +49,14 @@ func (self *File) GetChecksum() ([]byte, error) {
 
 func (self *File) Distill(store Store) (sgn *Signature, err error){
 	var aweak, bweak, weak, oldWeak WeakHash
-	var fileOffset int64
+	var readSize int64
 	var isRolling bool
 	var data [BlockSize]byte
-	var readSize, matchOffset int
+	var matchOffset, partialReadSize int
 	blockOffset := BlockSize - 1 // Will bootstrap read
 	oldBlock := Block{}
-	fullBlock := Block{}
 	newBlock  := Block{}
+	fullBlock := Block(make([]byte, BlockSize))
 
 	// Open file and get his size
 	fd, err := os.Open(self.Path)
@@ -63,9 +64,17 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 		return nil, err
 	}
 	defer fd.Close()
-	info, _ := fd.Stat()
+	info, err := fd.Stat()
+	check(err)
+	fileSize := info.Size()
 
-	// TODO split the 3 part of the logic: read stuff vs match stuff vs build signature
+	// File too small to run deduplication
+	if fileSize < BlockSize {
+		partialReadSize, err = fd.Read(data[:])
+		check(err)
+		sgn.AddData(data[:partialReadSize])
+		return sgn, nil
+	}
 
 
 	// Loop on file content: at any time in the loop newBlock and
@@ -76,19 +85,26 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 	// store (which means a prefix of oldBlock has been match to
 	// existing data in the store) then we put the suffix in the
 	// signature.
-	for fileOffset < info.Size() {
+	for {
+
+		if readSize > fileSize {
+			panic("Out of bound read")
+		}
+
 		// We read a new block if we reach the end of the current
 		// block or if there is a match
-		if blockOffset == BlockSize - 1 || matchOffset > 0 {
+		if blockOffset >= BlockSize - 1 || matchOffset > 0 {
 			if matchOffset == 0 && len(oldBlock) > 0  {
-				// Put unknown oldBlock in store
+				// Put unprocessed oldBlock in store
 				strong := GetStrongHash(oldBlock)
 				store.AddBlock(oldWeak, strong, oldBlock)
 				sgn.AddHash(oldWeak, strong)
 			}
 			// Read new block
-			readSize, _ = fd.Read(data[:])
-			fileOffset += BlockSize
+			partialReadSize, err = fd.Read(data[:])
+			check(err)
+			readSize += int64(partialReadSize)
+
 			if matchOffset > 0 {
 				// Jump over matched data
 				isRolling = false
@@ -100,18 +116,24 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 			// Update old & new
 			oldWeak = weak
 			oldBlock = newBlock
-			newBlock = Block(data[:])
+			newBlock = Block(data[:partialReadSize])
+		}
 
-			if readSize < BlockSize {
-				// last read reached end of file
-				// Store previous block
-				strong := GetStrongHash(oldBlock)
-				store.AddBlock(weak, strong, oldBlock)
-				sgn.AddHash(weak, strong)
-				// Store tail
-				sgn.AddData(newBlock[0:readSize])
-				return sgn, nil
+		// Handle end of file
+		if readSize == fileSize && blockOffset == partialReadSize {
+			// Store old block
+			strong := GetStrongHash(oldBlock)
+			store.AddBlock(oldWeak, strong, oldBlock)
+			sgn.AddHash(oldWeak, strong)
+
+			// Add end of file
+			if len(newBlock) > 0 {
+				sgn.AddData(newBlock[:])
 			}
+			if len(newBlock) >= BlockSize {
+				panic("Unexpected size of last read block")
+			}
+			return sgn, nil
 		}
 
 		// Update weak hash
@@ -120,7 +142,7 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 			weak, aweak, bweak = GetWeakHash(newBlock)
 			isRolling = true
 			// We have consumed the block, fast forward to next
-			blockOffset = BlockSize - 2
+			blockOffset = BlockSize
 		} else {
 			// Roll
 			pushByte := newBlock[blockOffset]
@@ -133,8 +155,8 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 		// handle weak hash match
 		if store.SearchWeak(weak) {
 			copy(concat(
-				newBlock[0:blockOffset],
 				oldBlock[BlockSize - blockOffset:],
+				newBlock[0:blockOffset],
 			), fullBlock[:])
 			strong := GetStrongHash(fullBlock)
 			blockFound := store.SearchStrong(strong)
@@ -148,7 +170,6 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 		}
 		blockOffset += 1
 	}
-	return sgn, nil
 }
 
 
@@ -182,11 +203,11 @@ func concat(s...[]byte) []byte {
 
 
 func (self *Signature) AddData(data []byte) {
-	println("SGN:ADDDATA")
+	// println("SGN:ADDDATA")
 
 }
 
 func (self *Signature) AddHash(weak WeakHash, strong StrongHash) {
-	println("SGN:ADDHASH")
+	// println("SGN:ADDHASH")
 
 }

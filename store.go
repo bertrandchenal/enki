@@ -17,6 +17,8 @@ func (self DummyStore) AddBlock(weak WeakHash, strong StrongHash, data Block) {
 		println("STORE:ADDBLOCK")
 		self.WeakMap[weak] = true
 		self.BlockMap[strong] = data
+	} else {
+		println("STORE:BLOCK MATCH")
 	}
 }
 

@@ -3,6 +3,8 @@ package enki
 import (
 	"fmt"
 	"testing"
+	"io"
+	"os"
 )
 
 func TestChecksum(t *testing.T) {
@@ -20,10 +22,38 @@ func TestChecksum(t *testing.T) {
 
 }
 
+func createFile(nbCopy int, name string) string {
+	name = "test-enki-" + name
+	println("File created:", name)
+	fd, err := os.Create(name)
+	check(err)
+	src, err := os.Open("32.jpg")
+	check(err)
+	for i := 0; i < nbCopy; i++ {
+		io.Copy(fd, src)
+		src.Seek(0, 0)
+	}
+	fd.Close()
+	src.Close()
+	return name
+}
+
 func TestDistill(t *testing.T) {
-	f := File{Path: "/tmp/random.data"} // TODO build file automatically
+	smallFile := createFile(1, "small.data")
+
+	f := File{Path: smallFile}
 	store := DummyStore{}
 	store.WeakMap = make(map[WeakHash]bool)
 	store.BlockMap = make(map[StrongHash]Block)
-	_,_  = f.Distill(&store) //result, err
+	f.Distill(&store)
+
+	largerFile := createFile(10, "larger.data")
+	f = File{Path: largerFile}
+	f.Distill(&store)
+
+	bigFile := createFile(50, "big.data")
+	f = File{Path: bigFile}
+	f.Distill(&store)
+	f.Distill(&store)
 }
+
