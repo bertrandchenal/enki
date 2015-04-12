@@ -5,7 +5,8 @@ import (
 	"os"
 	"io"
 	"crypto/md5"
-	_ "encoding/hex"
+	"encoding/hex"
+	// "reflect"
 )
 
 const (
@@ -145,10 +146,10 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 			blockOffset = BlockSize
 		} else {
 			// Roll
-			pushByte := newBlock[blockOffset]
-			popByte := oldBlock[BlockSize - blockOffset - 1]
-			aweak = (aweak - WeakHash(pushByte) + WeakHash(popByte)) % M
-			bweak = (bweak - (WeakHash(BlockSize) * WeakHash(pushByte)) + aweak) % M
+			pushHash := WeakHash(newBlock[blockOffset])
+			popHash := WeakHash(oldBlock[blockOffset])
+			aweak = (aweak - popHash + pushHash) % M
+			bweak = (bweak - (WeakHash(BlockSize+1) * popHash) + aweak) % M
 			weak = aweak + (M * bweak)
 		}
 
@@ -158,8 +159,10 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 				oldBlock[BlockSize - blockOffset:],
 				newBlock[0:blockOffset],
 			), fullBlock[:])
-			strong := GetStrongHash(fullBlock)
+
+			strong := GetStrongHash(fullBlock[:])
 			blockFound := store.SearchStrong(strong)
+			println(blockFound, " -- ",hex.Dump(strong[:]))
 			if blockFound {
 				// add partial data
 				sgn.AddData(oldBlock[0:blockOffset])
@@ -174,8 +177,9 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 
 
 // Returns a strong hash for a given block of data
-func GetStrongHash(v Block) StrongHash {
-	return StrongHash(md5.Sum(v))
+func GetStrongHash(v Block) *StrongHash {
+	res := StrongHash(md5.Sum(v))
+	return &res
 }
 
 // Returns a weak hash for a given block of data.
@@ -183,9 +187,12 @@ func GetWeakHash(v Block) (WeakHash, WeakHash, WeakHash) {
 	var a, b WeakHash
 	for i := range v {
 		a += WeakHash(v[i])
-		b += (WeakHash(len(v)-1) - WeakHash(i) + 1) * WeakHash(v[i])
+		b += WeakHash(len(v) - i + 1) * WeakHash(v[i])
 	}
-	return (a % M) + (M * (b % M)), a % M, b % M
+	a = a % M
+	b = b % M
+	weak := a + (M * b)
+	return weak, a, b
 }
 
 // Returns the smaller of a or b.
@@ -207,7 +214,7 @@ func (self *Signature) AddData(data []byte) {
 
 }
 
-func (self *Signature) AddHash(weak WeakHash, strong StrongHash) {
+func (self *Signature) AddHash(weak WeakHash, strong *StrongHash) {
 	// println("SGN:ADDHASH")
 
 }

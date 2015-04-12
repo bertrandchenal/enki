@@ -1,9 +1,12 @@
 package enki
 
+import 	"encoding/hex"
+
+
 type Store interface {
-	AddBlock(WeakHash, StrongHash, Block)
+	AddBlock(WeakHash, *StrongHash, Block)
 	SearchWeak(WeakHash) bool
-	SearchStrong(StrongHash) bool
+	SearchStrong(*StrongHash) bool
 }
 
 type DummyStore struct {
@@ -11,24 +14,30 @@ type DummyStore struct {
 	WeakMap map[WeakHash]bool
 }
 
-func (self DummyStore) AddBlock(weak WeakHash, strong StrongHash, data Block) {
-	_, present := self.BlockMap[strong]
+func (self DummyStore) AddBlock(weak WeakHash, strong *StrongHash, data Block) {
+	_, present := self.BlockMap[*strong]
 	if !present {
 		println("STORE:ADDBLOCK")
 		self.WeakMap[weak] = true
-		self.BlockMap[strong] = data
-	} else {
-		println("STORE:BLOCK MATCH")
+		self.BlockMap[*strong] = data
 	}
 }
 
-func (self DummyStore) SearchStrong(strong StrongHash) bool {
+func (self DummyStore) SearchStrong(strong *StrongHash) bool {
 	//println("searchstrong")
-	_, present := self.BlockMap[strong]
+	_, present := self.BlockMap[*strong]
+	if present {
+		println("STORE:BLOCK MATCH")
+	}
+	println(" -- ",hex.Dump(*strong))
 	return present
 }
 
 func (self DummyStore) SearchWeak(weak WeakHash) bool {
 	//println("searchweark")
-	return self.WeakMap[weak]
+	res := self.WeakMap[weak]
+	if res {
+		println("WEAK FOUND", weak)
+	}
+	return res
 }
