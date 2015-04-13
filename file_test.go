@@ -2,9 +2,10 @@ package enki
 
 import (
 	"fmt"
-	"testing"
 	"io"
 	"os"
+	"testing"
+ 	"encoding/hex"
 )
 
 func TestChecksum(t *testing.T) {
@@ -24,33 +25,59 @@ func TestChecksum(t *testing.T) {
 
 
 func TestWeakHash(t *testing.T) {
-	var weak, a, b WeakHash
+	var weak, aweak, bweak WeakHash
+	var i uint32
 	content := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+	winSize := uint32(len(content))
 
 	// Init values
 	expectWeak, expectA, expectB := GetWeakHash(Block(content))
+	weak, aweak, bweak = expectWeak, expectA, expectB
 
 	// Roll
-	for i := range content {
-		a += WeakHash(content[i])
-		b += WeakHash(len(content) - i + 1) * WeakHash(content[i])
+	twice := concat(content, content)
+	max_len := uint32(len(twice))
+	for i = 0; i < max_len - winSize; i++ {
+		pushHash := WeakHash(twice[i + winSize])
+		popHash := WeakHash(twice[i])
+		aweak = (aweak - popHash + pushHash) % M
+		bweak = (bweak - (WeakHash(winSize) * popHash) + aweak) % M
+		weak = aweak + (M * bweak)
 	}
-	a = a % M
-	b = b % M
-	weak = a + (M * b)
 
 	if expectWeak != weak {
 		panic("Failed test on weak hash")
 	}
 
-	if expectA != a {
+	if expectA != aweak {
 		panic("Failed test on 'a' value")
 	}
 
-	if expectB != b {
+	if expectB != bweak {
 		panic("Failed test on 'b' value")
 	}
+}
 
+func TestConcat(t *testing.T) {
+	half := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+	full := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+
+	// concat two half
+	result := hex.EncodeToString(concat(half[:], half[:]))
+	expected := hex.EncodeToString(full[:])
+	if result != expected {
+		println(result, expected)
+		panic("Concat test failed")
+	}
+
+	// Use concat as copy
+	result = hex.EncodeToString(concat(half[:]))
+	expected = hex.EncodeToString(half[:])
+	if result != expected {
+		println(result, expected)
+		panic("Concat test failed")
+	}
 
 }
 
@@ -91,13 +118,12 @@ func TestDistill(t *testing.T) {
 	f = File{Path: largerFile}
 	f.Distill(&store)
 
-	bigFile := createFile(50, "big.data", false)
+	bigFile := createFile(40, "big.data", false)
 	f = File{Path: bigFile}
 	f.Distill(&store)
 
-	shiftBigFile := createFile(50, "shiftbig.data", true)
-	f = File{Path: shiftBigFile}
-	f.Distill(&store)
-
+	// shiftBigFile := createFile(50, "shift-big.data", true)
+	// f = File{Path: shiftBigFile}
+	// f.Distill(&store)
 }
 
