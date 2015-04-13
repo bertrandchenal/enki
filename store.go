@@ -17,9 +17,10 @@ type DummyStore struct {
 func (self DummyStore) AddBlock(weak WeakHash, strong *StrongHash, data Block) {
 	_, present := self.BlockMap[*strong]
 	if !present {
-		println("NEW BLOCK")
 		self.WeakMap[weak] = true
 		self.BlockMap[*strong] = data
+	} else {
+		println("DUP!")
 	}
 }
 

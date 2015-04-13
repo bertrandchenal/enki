@@ -86,7 +86,6 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 	// existing data in the store) then we put the suffix in the
 	// signature.
 	for {
-
 		if readSize > fileSize {
 			panic("Out of bound read of file")
 		}
@@ -96,6 +95,8 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 			if !matchFound && len(oldBlock) > 0  {
 				// Put unprocessed oldBlock in store
 				strong := GetStrongHash(oldBlock)
+				oldWeak, _, _ = GetWeakHash(oldBlock)
+				println("add old", oldWeak)
 				store.AddBlock(oldWeak, strong, oldBlock)
 				sgn.AddHash(oldWeak, strong)
 			}
@@ -116,7 +117,6 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 				blockOffset = 0
 			}
 			// Update old & new
-			oldWeak = weak
 			oldBlock = newBlock
 			newBlock = Block(data[:partialReadSize])
 		}
@@ -125,6 +125,8 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 		if readSize == fileSize && blockOffset >= partialReadSize {
 			// Store old block
 			strong := GetStrongHash(oldBlock)
+			oldWeak, _, _ = GetWeakHash(oldBlock)
+			println("eof", oldWeak)
 			store.AddBlock(oldWeak, strong, oldBlock)
 			sgn.AddHash(oldWeak, strong)
 			// Add end of file
@@ -137,7 +139,6 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 			return sgn, nil
 		}
 
-
 		// Update weak hash
 		if !isRolling {
 			// Init weak hash
@@ -145,12 +146,16 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 				fullBlock = newBlock
 			} else {
 				fullBlock = concat(
-					oldBlock[BlockSize - blockOffset:],
-					newBlock[0:blockOffset],
+					oldBlock[blockOffset:],
+					newBlock[:blockOffset],
 				)
 			}
 			weak, aweak, bweak = GetWeakHash(fullBlock)
 			isRolling = true
+			if len(oldBlock) == 0 {
+				// Skip first full block of the file
+				blockOffset = BlockSize - 1
+			}
 		} else {
 			// Roll
 			pushHash := WeakHash(newBlock[blockOffset])
@@ -162,10 +167,14 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 
 		// handle weak hash match
 		if store.SearchWeak(weak) {
-			fullBlock = concat(
-				oldBlock[BlockSize - blockOffset:],
-				newBlock[0:blockOffset],
-			)
+			if len(oldBlock) > 0 {
+				fullBlock = concat(
+					oldBlock[blockOffset+1:],
+					newBlock[:blockOffset+1],
+				)
+			} else {
+				fullBlock = newBlock
+			}
 			println("WEAK MATCH", weak)
 			strong := GetStrongHash(fullBlock[:])
 			blockFound := store.SearchStrong(strong)
@@ -198,7 +207,7 @@ func GetWeakHash(v Block) (WeakHash, WeakHash, WeakHash) {
 	var a, b WeakHash
 	for i := range v {
 		a += WeakHash(v[i])
-		b += WeakHash(len(v) - i + 1) * WeakHash(v[i])
+		b += WeakHash(len(v) - i) * WeakHash(v[i])
 	}
 	a = a % M
 	b = b % M

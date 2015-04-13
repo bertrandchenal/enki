@@ -27,15 +27,15 @@ func TestChecksum(t *testing.T) {
 func TestWeakHash(t *testing.T) {
 	var weak, aweak, bweak WeakHash
 	var i uint32
-	content := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+	content := []byte{8, 0, 1, 2, 5, 6, 7, 9, 3, 4,}
 	winSize := uint32(len(content))
 
 	// Init values
 	expectWeak, expectA, expectB := GetWeakHash(Block(content))
 	weak, aweak, bweak = expectWeak, expectA, expectB
 
-	// Roll
-	twice := concat(content, content)
+	// Roll, with noise in the middle
+	twice := concat(content, content[0:3], content)
 	max_len := uint32(len(twice))
 	for i = 0; i < max_len - winSize; i++ {
 		pushHash := WeakHash(twice[i + winSize])
@@ -44,15 +44,34 @@ func TestWeakHash(t *testing.T) {
 		bweak = (bweak - (WeakHash(winSize) * popHash) + aweak) % M
 		weak = aweak + (M * bweak)
 	}
-
 	if expectWeak != weak {
 		panic("Failed test on weak hash")
 	}
-
 	if expectA != aweak {
 		panic("Failed test on 'a' value")
 	}
+	if expectB != bweak {
+		panic("Failed test on 'b' value")
+	}
 
+	// Roll, starting with a zeroed prefix
+	weak, aweak, bweak = 0, 0, 0
+	zeroes := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	twice = concat(zeroes, content)
+	max_len = uint32(len(twice))
+	for i = 0; i < max_len - winSize; i++ {
+		pushHash := WeakHash(twice[i + winSize])
+		popHash := WeakHash(twice[i])
+		aweak = (aweak - popHash + pushHash) % M
+		bweak = (bweak - (WeakHash(winSize) * popHash) + aweak) % M
+		weak = aweak + (M * bweak)
+	}
+	if expectWeak != weak {
+		panic("Failed test on weak hash")
+	}
+	if expectA != aweak {
+		panic("Failed test on 'a' value")
+	}
 	if expectB != bweak {
 		panic("Failed test on 'b' value")
 	}
@@ -66,6 +85,14 @@ func TestConcat(t *testing.T) {
 	// concat two half
 	result := hex.EncodeToString(concat(half[:], half[:]))
 	expected := hex.EncodeToString(full[:])
+	if result != expected {
+		println(result, expected)
+		panic("Concat test failed")
+	}
+
+	// concat two half with range
+	result = hex.EncodeToString(concat(half[:3], half[3:]))
+	expected = hex.EncodeToString(half[:])
 	if result != expected {
 		println(result, expected)
 		panic("Concat test failed")
@@ -118,12 +145,12 @@ func TestDistill(t *testing.T) {
 	f = File{Path: largerFile}
 	f.Distill(&store)
 
-	bigFile := createFile(40, "big.data", false)
+	bigFile := createFile(50, "big.data", false)
 	f = File{Path: bigFile}
 	f.Distill(&store)
 
-	// shiftBigFile := createFile(50, "shift-big.data", true)
-	// f = File{Path: shiftBigFile}
-	// f.Distill(&store)
+	shiftBigFile := createFile(50, "shift-big.data", true)
+	f = File{Path: shiftBigFile}
+	f.Distill(&store)
 }
 
