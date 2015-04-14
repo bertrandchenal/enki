@@ -117,6 +117,7 @@ func createFile(nbCopy int, name string, shift bool) string {
 	src, err := os.Open("32.jpg")
 	check(err)
 
+	// Shift content by inserting 1 byte at the start of the file
 	if shift {
 		head := [1]byte{}
 		src.Read(head[:])

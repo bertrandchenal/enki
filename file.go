@@ -5,7 +5,7 @@ import (
 	"os"
 	"io"
 	"crypto/md5"
-	"encoding/hex"
+	// "encoding/hex"
 )
 
 const (
@@ -49,11 +49,10 @@ func (self *File) GetChecksum() ([]byte, error) {
 
 func (self *File) Distill(store Store) (sgn *Signature, err error){
 	var aweak, bweak, weak, oldWeak WeakHash
-	var readSize int64
+	var readSize, blockOffset int64
 	var isRolling, matchFound bool
 	var data []byte
 	var partialReadSize int
-	blockOffset := BlockSize - 1 // Will bootstrap read
 	oldBlock := Block{}
 	newBlock  := Block{}
 	fullBlock := Block(make([]byte, BlockSize))
@@ -77,122 +76,196 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 		return sgn, nil
 	}
 
-	// Loop on file content: at any time in the loop newBlock and
-	// oldBlock are the two last block of data read from the file. The
-	// rolling windows is moving astride them and when it is on top of
-	// newBlock (no more on oldBlock) the part of the oldBlock that is
-	// not in the store is added. If a part of the oldBlock is in the
-	// store (which means a prefix of oldBlock has been match to
-	// existing data in the store) then we put the suffix in the
-	// signature.
+	// Prepare loop
+	data = make([]byte, BlockSize)
+	partialReadSize, err = fd.Read(data)
+	check(err)
+	readSize = BlockSize
+	oldBlock = Block(data[:])
+
+	data = make([]byte, BlockSize)
+	partialReadSize, err = fd.Read(data)
+	if err != io.EOF {
+		check(err)
+	}
+	readSize += int64(partialReadSize)
+	newBlock = Block(data[:partialReadSize])
+	isRolling = false
+
 	for {
-		if readSize > fileSize {
-			panic("Out of bound read of file")
-		}
-		// We read a new block if we reach the end of the current
-		// block or if there is a match
-		if blockOffset >= BlockSize - 1 || matchFound {
-			if !matchFound && len(oldBlock) > 0  {
-				// Put unprocessed oldBlock in store
+
+
+		if matchFound || blockOffset == BlockSize {
+			if matchFound {
+				matchFound = false
+			} else {
+				// Store old block
 				strong := GetStrongHash(oldBlock)
 				oldWeak, _, _ = GetWeakHash(oldBlock)
 				println("add old", oldWeak)
 				store.AddBlock(oldWeak, strong, oldBlock)
 				sgn.AddHash(oldWeak, strong)
+				blockOffset = 0
 			}
-			// Read new block
+
+			// Read data
 			data = make([]byte, BlockSize)
 			partialReadSize, err = fd.Read(data)
-			if err != io.EOF {
+			if err == io.EOF {
+			} else {
 				check(err)
 			}
 			readSize += int64(partialReadSize)
-
-			if matchFound {
-				// Jump over matched data
-				isRolling = false
-				blockOffset -= 1 
-				matchFound = false
-			} else {
-				blockOffset = 0
-			}
-			// Update old & new
 			oldBlock = newBlock
 			newBlock = Block(data[:partialReadSize])
+			println("readSize", readSize, fileSize, blockOffset, partialReadSize)
+
 		}
 
-		// Handle end of file
-		if readSize == fileSize && blockOffset >= partialReadSize {
-			// Store old block
-			strong := GetStrongHash(oldBlock)
-			oldWeak, _, _ = GetWeakHash(oldBlock)
-			println("eof", oldWeak)
-			store.AddBlock(oldWeak, strong, oldBlock)
-			sgn.AddHash(oldWeak, strong)
-			// Add end of file
-			if len(newBlock) > 0 {
-				sgn.AddData(newBlock)
-			}
-			if len(newBlock) >= BlockSize {
-				panic("Unexpected size of last read block")
-			}
+		if readSize == fileSize && blockOffset >= int64(partialReadSize) {
 			return sgn, nil
 		}
 
-		// Update weak hash
+
 		if !isRolling {
-			// Init weak hash
-			if len(oldBlock) == 0 {
-				fullBlock = newBlock
-			} else {
-				fullBlock = concat(
-					oldBlock[blockOffset:],
-					newBlock[:blockOffset],
-				)
-			}
+			fullBlock = concat(
+				oldBlock[blockOffset:],
+				newBlock[:blockOffset],
+			)
 			weak, aweak, bweak = GetWeakHash(fullBlock)
 			isRolling = true
-			if len(oldBlock) == 0 {
-				// Skip first full block of the file
-				blockOffset = BlockSize - 1
-			}
 		} else {
-			// Roll
 			pushHash := WeakHash(newBlock[blockOffset])
 			popHash := WeakHash(oldBlock[blockOffset])
 			aweak = (aweak - popHash + pushHash) % M
 			bweak = (bweak - (WeakHash(BlockSize) * popHash) + aweak) % M
 			weak = aweak + (M * bweak)
+			blockOffset += 1
 		}
 
-		// handle weak hash match
 		if store.SearchWeak(weak) {
-			if len(oldBlock) > 0 {
-				fullBlock = concat(
-					oldBlock[blockOffset+1:],
-					newBlock[:blockOffset+1],
-				)
-			} else {
-				fullBlock = newBlock
-			}
-			println("WEAK MATCH", weak)
+			fullBlock = concat(
+				oldBlock[blockOffset:],
+				newBlock[:blockOffset],
+			)
 			strong := GetStrongHash(fullBlock[:])
 			blockFound := store.SearchStrong(strong)
 			if blockFound {
-				println("FULL MATCH", hex.EncodeToString(strong[:]))
-				// add partial data
-				if len(oldBlock) > 0 {
-					sgn.AddData(oldBlock[0:blockOffset])
-				}
-				// add matching block
-				sgn.AddHash(weak, strong)
+				println("BLOCK FOUND", weak)
+				isRolling = false
 				matchFound = true
-			} else {
-				println("MISSED", len(fullBlock), hex.EncodeToString(strong[:]))
+				continue
 			}
 		}
-		blockOffset += 1
 	}
+
+	// 	if readSize > fileSize {
+	// 		panic("Out of bound read of file")
+	// 	}
+	// 	// We read a new block if we reach the end of the current
+	// 	// block or if there is a match
+	// 	if blockOffset >= BlockSize - 1 || matchFound {
+	// 		if !matchFound && len(oldBlock) > 0  {
+	// 			// Put unprocessed oldBlock in store
+	// 			strong := GetStrongHash(oldBlock)
+	// 			oldWeak, _, _ = GetWeakHash(oldBlock)
+	// 			println("add old", oldWeak)
+	// 			store.AddBlock(oldWeak, strong, oldBlock)
+	// 			sgn.AddHash(oldWeak, strong)
+	// 		}
+	// 		// Read new block
+	// 		data = make([]byte, BlockSize)
+	// 		partialReadSize, err = fd.Read(data)
+	// 		if err != io.EOF {
+	// 			check(err)
+	// 		}
+	// 		readSize += int64(partialReadSize)
+
+	// 		if matchFound {
+	// 			// Jump over matched data
+	// 			isRolling = false
+	// 			blockOffset -= 1 
+	// 			matchFound = false
+	// 		} else {
+	// 			blockOffset = 0
+	// 		}
+	// 		// Update old & new
+	// 		oldBlock = newBlock
+	// 		newBlock = Block(data[:partialReadSize])
+	// 	}
+
+	// 	// Handle end of file
+	// 	if readSize == fileSize && blockOffset >= partialReadSize {
+	// 		// Store old block
+	// 		strong := GetStrongHash(oldBlock)
+	// 		oldWeak, _, _ = GetWeakHash(oldBlock)
+	// 		println("eof", oldWeak)
+	// 		store.AddBlock(oldWeak, strong, oldBlock)
+	// 		sgn.AddHash(oldWeak, strong)
+	// 		// Add end of file
+	// 		if len(newBlock) > 0 {
+	// 			sgn.AddData(newBlock)
+	// 		}
+	// 		if len(newBlock) >= BlockSize {
+	// 			panic("Unexpected size of last read block")
+	// 		}
+	// 		return sgn, nil
+	// 	}
+
+	// 	// Update weak hash
+	// 	if !isRolling {
+	// 		// Init weak hash
+	// 		if len(oldBlock) == 0 {
+	// 			fullBlock = newBlock
+	// 		} else {
+	// 			fullBlock = concat(
+	// 				oldBlock[blockOffset:],
+	// 				newBlock[:blockOffset],
+	// 			)
+	// 		}
+	// 		weak, aweak, bweak = GetWeakHash(fullBlock)
+	// 		isRolling = true
+	// 		if len(oldBlock) == 0 {
+	// 			// Skip first full block of the file
+	// 			blockOffset = BlockSize - 1
+	// 		}
+	// 	} else {
+	// 		// Roll
+	// 		pushHash := WeakHash(newBlock[blockOffset])
+	// 		popHash := WeakHash(oldBlock[blockOffset])
+	// 		aweak = (aweak - popHash + pushHash) % M
+	// 		bweak = (bweak - (WeakHash(BlockSize) * popHash) + aweak) % M
+	// 		weak = aweak + (M * bweak)
+	// 	}
+
+	// 	// handle weak hash match
+	// 	if store.SearchWeak(weak) {
+	// 		if len(oldBlock) > 0 {
+	// 			fullBlock = concat(
+	// 				oldBlock[blockOffset+1:],
+	// 				newBlock[:blockOffset+1],
+	// 			)
+	// 		} else {
+	// 			fullBlock = newBlock
+	// 		}
+	// 		println("WEAK MATCH", weak)
+	// 		strong := GetStrongHash(fullBlock[:])
+	// 		blockFound := store.SearchStrong(strong)
+	// 		if blockFound {
+	// 			println("FULL MATCH", hex.EncodeToString(strong[:]))
+	// 			// add partial data
+	// 			if len(oldBlock) > 0 {
+	// 				sgn.AddData(oldBlock[0:blockOffset])
+	// 			}
+	// 			// add matching block
+	// 			sgn.AddHash(weak, strong)
+	// 			matchFound = true
+	// 		} else {
+	// 			println("MISSED", len(fullBlock), hex.EncodeToString(strong[:]))
+	// 		}
+	// 	}
+	// 	blockOffset += 1
+	// }
 }
 
 
