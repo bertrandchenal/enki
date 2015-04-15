@@ -49,10 +49,9 @@ func (self *File) GetChecksum() ([]byte, error) {
 
 func (self *File) Distill(store Store) (sgn *Signature, err error){
 	var aweak, bweak, weak, oldWeak WeakHash
-	var readSize, blockOffset int64
+	var readSize, partialReadSize, blockOffset, lastMatch int64
 	var isRolling, matchFound bool
 	var data []byte
-	var partialReadSize int
 	oldBlock := Block{}
 	newBlock  := Block{}
 	fullBlock := Block(make([]byte, BlockSize))
@@ -70,7 +69,8 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 	// File too small to run deduplication
 	if fileSize < BlockSize {
 		data = make([]byte, BlockSize)
-		partialReadSize, err = fd.Read(data)
+		prs, err := fd.Read(data)
+		partialReadSize = int64(prs)
 		check(err)
 		sgn.AddData(data[:partialReadSize])
 		return sgn, nil
@@ -78,51 +78,58 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 
 	// Prepare loop
 	data = make([]byte, BlockSize)
-	partialReadSize, err = fd.Read(data)
+	prs, err := fd.Read(data)
+	partialReadSize = int64(prs)
 	check(err)
 	readSize = BlockSize
 	oldBlock = Block(data[:])
 
 	data = make([]byte, BlockSize)
-	partialReadSize, err = fd.Read(data)
+	prs, err = fd.Read(data)
+	partialReadSize = int64(prs)
 	if err != io.EOF {
 		check(err)
 	}
-	readSize += int64(partialReadSize)
+	readSize += partialReadSize
 	newBlock = Block(data[:partialReadSize])
 	isRolling = false
 
 	for {
 
-
-		if matchFound || blockOffset == BlockSize {
+		// Read new block when end of block is reached or if a match
+		// was found
+		if matchFound || blockOffset == partialReadSize {
 			if matchFound {
 				matchFound = false
+				lastMatch = blockOffset
 			} else {
 				// Store old block
+				if lastMatch > 0 {
+					sgn.AddData(oldBlock[blockOffset:])
+				}
 				strong := GetStrongHash(oldBlock)
 				oldWeak, _, _ = GetWeakHash(oldBlock)
 				println("add old", oldWeak)
 				store.AddBlock(oldWeak, strong, oldBlock)
 				sgn.AddHash(oldWeak, strong)
 				blockOffset = 0
+				lastMatch = 0
 			}
 
 			// Read data
 			data = make([]byte, BlockSize)
-			partialReadSize, err = fd.Read(data)
+			prs, err := fd.Read(data)
+			partialReadSize = int64(prs)
 			if err == io.EOF {
 			} else {
 				check(err)
 			}
-			readSize += int64(partialReadSize)
+			readSize += partialReadSize
 			oldBlock = newBlock
 			newBlock = Block(data[:partialReadSize])
-			println("readSize", readSize, fileSize, blockOffset, partialReadSize)
-
 		}
 
-		if readSize == fileSize && blockOffset >= int64(partialReadSize) {
+		if readSize == fileSize && blockOffset >= partialReadSize {
 			return sgn, nil
 		}
 
@@ -151,7 +158,6 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 			strong := GetStrongHash(fullBlock[:])
 			blockFound := store.SearchStrong(strong)
 			if blockFound {
-				println("BLOCK FOUND", weak)
 				isRolling = false
 				matchFound = true
 				continue
