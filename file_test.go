@@ -153,5 +153,8 @@ func TestDistill(t *testing.T) {
 	shiftBigFile := createFile(50, "shift-big.data", true)
 	f = File{Path: shiftBigFile}
 	f.Distill(&store)
+
+	// TODO test with non-repeating pattern content
+
 }
 

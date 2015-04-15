@@ -12,14 +12,17 @@ const (
 	StrongHashSize = md5.Size
 	BlockSize = 1024 * 64
 	M         = 1 << 16
+	INST_DATA = iota
+	INST_HASH = iota
 )
 
 type Block []byte
 type StrongHash [StrongHashSize]byte
 type WeakHash uint32
 type Instruction struct {
-	mode string
-	hash []byte
+	mode int
+	weakHash WeakHash
+	strongHash *StrongHash
 	data []byte
 }
 type Signature struct {
@@ -55,7 +58,7 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 	oldBlock := Block{}
 	newBlock  := Block{}
 	fullBlock := Block(make([]byte, BlockSize))
-
+	sgn = &Signature{}
 	// Open file and get his size
 	fd, err := os.Open(self.Path)
 	if err != nil {
@@ -72,6 +75,7 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 		prs, err := fd.Read(data)
 		partialReadSize = int64(prs)
 		check(err)
+		println("Add data")
 		sgn.AddData(data[:partialReadSize])
 		return sgn, nil
 	}
@@ -105,13 +109,13 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 			} else {
 				// Store old block
 				if lastMatch > 0 {
-					sgn.AddData(oldBlock[blockOffset:])
+					sgn.AddData(oldBlock[lastMatch:])
+				} else {
+					strong := GetStrongHash(oldBlock)
+					oldWeak, _, _ = GetWeakHash(oldBlock)
+					store.AddBlock(oldWeak, strong, oldBlock)
+					sgn.AddHash(oldWeak, strong)
 				}
-				strong := GetStrongHash(oldBlock)
-				oldWeak, _, _ = GetWeakHash(oldBlock)
-				println("add old", oldWeak)
-				store.AddBlock(oldWeak, strong, oldBlock)
-				sgn.AddHash(oldWeak, strong)
 				blockOffset = 0
 				lastMatch = 0
 			}
@@ -160,6 +164,9 @@ func (self *File) Distill(store Store) (sgn *Signature, err error){
 			if blockFound {
 				isRolling = false
 				matchFound = true
+
+				sgn.AddData(oldBlock[:blockOffset])
+				sgn.AddHash(weak, strong)
 				continue
 			}
 		}
@@ -202,11 +209,18 @@ func concat(s...[]byte) []byte {
 
 
 func (self *Signature) AddData(data []byte) {
-	// println("SGN:ADDDATA")
-
+	instruction := Instruction{
+		mode: INST_DATA,
+		data: data,
+	}
+	self.Instructions = append(self.Instructions, instruction)
 }
 
 func (self *Signature) AddHash(weak WeakHash, strong *StrongHash) {
-	// println("SGN:ADDHASH")
-
+	instruction := Instruction{
+		mode: INST_HASH,
+		weakHash: weak,
+		strongHash: strong,
+	}
+	self.Instructions = append(self.Instructions, instruction)
 }
