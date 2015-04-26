@@ -21,7 +21,7 @@ func TestChecksum(t *testing.T) {
 	check(err)
 	defer fd.Close()
 
-	backend := NewDummyBackend()
+	backend := NewMemoryBackend()
 	store := &Store{backend}
 	result, err := store.GetChecksum(fd)
 
@@ -145,7 +145,7 @@ func createFile(nbCopy int, name string, shift bool) string {
 }
 
 func TestGetSignature(t *testing.T) {
-	backend := NewDummyBackend()
+	backend := NewMemoryBackend()
 	store := &Store{backend}
 
 	testFiles := []TestFile{
