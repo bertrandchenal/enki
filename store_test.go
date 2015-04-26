@@ -8,10 +8,22 @@ import (
  	"encoding/hex"
 )
 
+type TestFile struct {
+	size int
+	name string
+	shifted bool
+}
+
+
 func TestChecksum(t *testing.T) {
 	expect := "c709067ec00d61db0c75d35ace87e21d"
-	f := File{Path: "32.jpg"}
-	result, err := f.GetChecksum()
+	fd, err := os.Open("32.jpg")
+	check(err)
+	defer fd.Close()
+
+	backend := NewDummyBackend()
+	store := &Store{backend}
+	result, err := store.GetChecksum(fd)
 
 	if err != nil {
 		t.Errorf(err.Error())
@@ -20,7 +32,6 @@ func TestChecksum(t *testing.T) {
 	if fmt.Sprintf("%x", result) != expect {
 		t.Errorf("Checksum mismatch", string(result), expect)
 	}
-
 }
 
 
@@ -133,28 +144,35 @@ func createFile(nbCopy int, name string, shift bool) string {
 	return name
 }
 
-func TestDistill(t *testing.T) {
-	smallFile := createFile(1, "small.data", false)
+func TestGetSignature(t *testing.T) {
+	backend := NewDummyBackend()
+	store := &Store{backend}
 
-	f := File{Path: smallFile}
-	store := DummyStore{}
-	store.WeakMap = make(map[WeakHash]bool)
-	store.BlockMap = make(map[StrongHash]Block)
-	f.Distill(&store)
+	testFiles := []TestFile{
+		{1, "small.data", false},
+		{10, "larger.data", false},
+		{20, "big.data", false},
+		{20, "big-shifted.data", true},
+	}
 
-	largerFile := createFile(10, "larger.data", false)
-	f = File{Path: largerFile}
-	f.Distill(&store)
+	for _, tf := range testFiles {
+		path := createFile(tf.size, tf.name, tf.shifted)
+		fd, err := os.Open(path)
+		check(err)
+		sgn, err := store.GetSignature(fd)
+		check(err)
 
-	bigFile := createFile(50, "big.data", false)
-	f = File{Path: bigFile}
-	f.Distill(&store)
+		fd, err = os.Open(path)
+		check(err)
+		_, err = store.GetChecksum(fd)
+		check(err)
 
-	shiftBigFile := createFile(50, "shift-big.data", true)
-	f = File{Path: shiftBigFile}
-	f.Distill(&store)
+		fd, err = os.Create(path + ".extracted")
+		check(err)
+		sgn.Extract(backend, fd)
+	}
+
 
 	// TODO test with non-repeating pattern content
-
 }
 

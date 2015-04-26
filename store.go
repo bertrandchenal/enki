@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"crypto/md5"
-	// "encoding/hex"
 )
 
 const (
