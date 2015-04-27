@@ -23,9 +23,6 @@ func (self *MemoryBackend) AddBlock(weak WeakHash, strong *StrongHash, data Bloc
 		self.bloomFilter.Add(weak)
 		self.WeakMap[weak] = true
 		self.BlockMap[*strong] = data
-		println("NEW STRONG")
-	} else {
-		println("DUP!")
 	}
 }
 

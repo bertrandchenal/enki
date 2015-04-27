@@ -122,7 +122,6 @@ func TestConcat(t *testing.T) {
 
 func createFile(nbCopy int, name string, shift bool) string {
 	name = "test-enki-" + name
-	println("File created:", name)
 	fd, err := os.Create(name)
 	check(err)
 	src, err := os.Open("32.jpg")
@@ -144,15 +143,14 @@ func createFile(nbCopy int, name string, shift bool) string {
 	return name
 }
 
-func TestGetSignature(t *testing.T) {
-	backend := NewMemoryBackend()
+func checkSignature(backend Backend) {
 	store := &Store{backend}
 
 	testFiles := []TestFile{
 		{1, "small.data", false},
 		{10, "larger.data", false},
-		{20, "big.data", false},
-		{20, "big-shifted.data", true},
+		{200, "big.data", false},
+		{200, "big-shifted.data", true},
 	}
 
 	for _, tf := range testFiles {
@@ -176,3 +174,13 @@ func TestGetSignature(t *testing.T) {
 	// TODO test with non-repeating pattern content
 }
 
+func BenchmarkMemorySignature(b *testing.B) {
+	backend := NewMemoryBackend()
+	checkSignature(backend)
+}
+
+func BenchmarkBoltSignature(b *testing.B) {
+	boltBackend := NewBoltBackend("/tmp/")
+	checkSignature(boltBackend)
+	boltBackend.(*BoltBackend).Close()
+}

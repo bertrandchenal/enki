@@ -2,8 +2,9 @@ package enki
 
 import (
 	"bytes"
-	"io"
 	"crypto/md5"
+	"encoding/gob"
+	"io"
 )
 
 const (
@@ -58,7 +59,6 @@ func (self *Store) GetSignature(fd io.Reader) (sgn *Signature, err error) {
 	partialReadSize = int64(prs)
 	if err != nil {
 		if err == io.ErrUnexpectedEOF {
-			println("Add data")
 			sgn.AddData(data[:partialReadSize])
 			return sgn, nil
 		} else if err == io.EOF {
@@ -92,8 +92,6 @@ func (self *Store) GetSignature(fd io.Reader) (sgn *Signature, err error) {
 	readSize += BlockSize
 	newBlock = Block(data[:])
 	isRolling = false
-	println("blockOffset", blockOffset, "partialReadSize", partialReadSize)
-
 	for {
 		// Read new block when end of block is reached or if a match
 		// was found
@@ -105,10 +103,8 @@ func (self *Store) GetSignature(fd io.Reader) (sgn *Signature, err error) {
 			} else {
 				// Store old block
 				if lastMatch > 0 {
-					println("STORE OLD DATA")
 					sgn.AddData(oldBlock[lastMatch:])
 				} else {
-					println("STORE OLD HASH")
 					strong := GetStrongHash(oldBlock)
 					oldWeak, _, _ = GetWeakHash(oldBlock)
 					self.backend.AddBlock(oldWeak, strong, oldBlock)
@@ -120,7 +116,6 @@ func (self *Store) GetSignature(fd io.Reader) (sgn *Signature, err error) {
 
 			// Last read was too short
 			if partialReadSize < BlockSize {
-				println("STOP", blockOffset, partialReadSize)
 				sgn.AddData(newBlock[blockOffset:partialReadSize])
 				return sgn, nil
 			}
@@ -139,7 +134,18 @@ func (self *Store) GetSignature(fd io.Reader) (sgn *Signature, err error) {
 			newBlock = Block(data[:partialReadSize])
 		}
 		if eofReached && blockOffset >= partialReadSize {
-			panic("don't touch me")
+			if lastMatch > 0 {
+				sgn.AddData(oldBlock[lastMatch:])
+			} else {
+				strong := GetStrongHash(oldBlock)
+				oldWeak, _, _ = GetWeakHash(oldBlock)
+				self.backend.AddBlock(oldWeak, strong, oldBlock)
+				sgn.AddHash(oldWeak, strong)
+			}
+			if (partialReadSize == BlockSize) {
+				panic("TODO")
+			}
+			sgn.AddData(newBlock[:partialReadSize])
 			return sgn, nil
 		}
 
@@ -192,7 +198,6 @@ func (self *Store) Put(id string, fd io.Reader) {
 }
 
 func (self *Signature) AddData(data []byte) {
-	println("ADD DATA", len(data))
 	segment := Segment{
 		mode: DATA_SGM,
 		data: data,
@@ -201,7 +206,6 @@ func (self *Signature) AddData(data []byte) {
 }
 
 func (self *Signature) AddHash(weak WeakHash, strong *StrongHash) {
-	println("ADD HASH")
 	segment := Segment{
 		mode: HASH_SGM,
 		weakHash: weak,
@@ -224,8 +228,21 @@ func (self *Signature) Extract(backend Backend, w io.Writer) {
 	}
 }
 
+func (self *Signature) GobDecode(data []byte) error {
+	buf := bytes.NewBuffer(data)
+    d := gob.NewDecoder(buf)
+    err := d.Decode(self)
+	return err
+}
 
+func (self *Signature) GobEncode() ([]byte, error) {
+	var buf bytes.Buffer
+    e := gob.NewEncoder(&buf)
 
+	// Encoding the map
+    err := e.Encode(self)
+	return buf.Bytes(), err
+}
 
 // Returns a strong hash for a given block of data
 func GetStrongHash(v Block) *StrongHash {

@@ -3,7 +3,7 @@ package enki
 
 import (
 	"encoding/binary"
-	"github.com/willf/bloom" willfbloom
+	willfbloom "github.com/willf/bloom"
 )
 
 
@@ -24,7 +24,7 @@ func (self *Bloom) Add(weak WeakHash) {
 	self.bf.Add(weakb)
 }
 
-func (self *Bloom) Test(weak WeakHash) {
+func (self *Bloom) Test(weak WeakHash) bool {
 	weakb := make([]byte, 4)
 	binary.LittleEndian.PutUint32(weakb, uint32(weak))
 	return self.bf.Test(weakb)
@@ -32,16 +32,19 @@ func (self *Bloom) Test(weak WeakHash) {
 
 func NewBloom() *Bloom {
 	bloom := &Bloom{}
-	bloom.bf := willfbloom.New(BLOOMSIZE, NBFUNC)
+	bloom.bf = willfbloom.New(BLOOMSIZE, NBFUNC)
 	return bloom
 }
 
 func BloomFromGob(data []byte) (*Bloom, error) {
 	bloom := NewBloom()
-	if len(data) == 0 {
-		return bloom, nil
-	} else if len(data) < BLOOMSIZE {
-		return nil, error("Given data is too small")
+	err := bloom.bf.GobDecode(data)
+	if err != nil {
+		return nil, err
 	}
-	return bloom.bf.GobDecode(data), nil
+	return bloom, nil
+}
+
+func (self *Bloom) GobEncode() ([]byte, error) {
+	return self.bf.GobEncode()
 }

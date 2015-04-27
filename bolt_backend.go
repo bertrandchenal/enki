@@ -2,23 +2,31 @@ package enki
 
 import (
 	"github.com/boltdb/bolt"
-	"ioutils"
+	"io/ioutil"
+	"os"
 	"path"
 )
 
 type BoltBackend struct {
-	bloomFilter *bloom.BloomFilter
-	db bolt.DB
+	bloomFilter *Bloom
+	db *bolt.DB
+	dotDir *string
 	signatureBucket *bolt.Bucket
 	strongBucket *bolt.Bucket
-	tx *bolt.Transaction
+	tx *bolt.Tx
 }
 
 func NewBoltBackend(dotDir string) Backend {
 	// Create bloom
 	bloomPath := path.Join(dotDir, "bloom.gob")
-	bloomData, err := ioutils.ReadFile(bloomPath)
-	bloomFilter := BloomFromGob(bloomData)
+	bloomData, err := ioutil.ReadFile(bloomPath)
+	_, failed := err.(*os.PathError)
+	if failed {
+		bloomData = []byte{}
+	} else {
+		check(err)
+	}
+	bloomFilter, err := BloomFromGob(bloomData)
 	check(err)
 
 	// Create db
@@ -34,9 +42,10 @@ func NewBoltBackend(dotDir string) Backend {
 	strongBucket, err := tx.CreateBucketIfNotExists([]byte("strong"))
 	check(err)
 
-	backend := &BoldBackend{
+	backend := &BoltBackend{
 		bloomFilter,
 		db,
+		&dotDir,
 		signatureBucket,
 		strongBucket,
 		tx,
@@ -47,6 +56,11 @@ func NewBoltBackend(dotDir string) Backend {
 func (self *BoltBackend) Close() {
 	self.tx.Commit()
 	self.db.Close()
+	bloomPath := path.Join(*self.dotDir, "bloom.gob")
+	fd, err := os.Create(bloomPath)
+	check(err)
+	data, err := self.bloomFilter.GobEncode()
+	fd.Write(data)
 }
 
 func (self *BoltBackend) Abort() {
@@ -54,30 +68,33 @@ func (self *BoltBackend) Abort() {
 }
 
 func (self *BoltBackend) AddBlock(weak WeakHash, strong *StrongHash, data Block) {
-	value := self.strongBucket.Get(*strong)
+	value := self.strongBucket.Get(strong[:])
 	if value == nil {
 		self.bloomFilter.Add(weak)
-		self.strongBucket.Put(*strong, data)
-		println("NEW STRONG")
-	} else {
-		println("DUP!")
+		self.strongBucket.Put(strong[:], data)
 	}
 }
 
-func (self *MemoryBackend) GetStrong(strong *StrongHash) (Block, bool) {
-	value := self.strongBucket.Get(*strong)
+func (self *BoltBackend) GetStrong(strong *StrongHash) (Block, bool) {
+	value := self.strongBucket.Get(strong[:])
 	return value, value != nil
 }
 
-func (self *MemoryBackend) SearchWeak(weak WeakHash) bool {
+func (self *BoltBackend) SearchWeak(weak WeakHash) bool {
 	return self.bloomFilter.Test(weak)
 }
 
-func (self *MemoryBackend) GetSignature(id string) (*Signature, bool) {
-	sgn := self.SignatureBucket([]byte(id))
-	return sgn, sgn != nil
+func (self *BoltBackend) GetSignature(id string) (*Signature, bool) {
+	sgn := &Signature{}
+	data := self.signatureBucket.Get([]byte(id))
+	err := sgn.GobDecode(data)
+	check(err)
+	return sgn, true
 }
 
-func (self *MemoryBackend) SetSignature(id string, sgn *Signature) {
-	self.SignatureBucket.Put([]byte(id),  sgn)
+func (self *BoltBackend) SetSignature(id string, sgn *Signature) {
+	key := []byte(id)
+	data, err := sgn.GobEncode()
+	check(err)
+	self.signatureBucket.Put(key, data)
 }
