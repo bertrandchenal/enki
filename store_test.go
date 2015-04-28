@@ -195,15 +195,17 @@ func TestMemorySignature(t *testing.T) {
 
 func TestBoltSignature(t *testing.T) {
 	boltBackend := NewBoltBackend("/tmp/")
+	checkSignature(boltBackend)
 	boltBackend.(*BoltBackend).Close()
 }
 
-func BenchMemorySignature(b *testing.B) {
+func BenchmarkMemorySignature(b *testing.B) {
 	backend := NewMemoryBackend()
 	checkSignature(backend)
 }
 
-func BenchBoltSignature(b *testing.B) {
+func BenchmarkBoltSignature(b *testing.B) {
 	boltBackend := NewBoltBackend("/tmp/")
+	checkSignature(boltBackend)
 	boltBackend.(*BoltBackend).Close()
 }
