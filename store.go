@@ -142,9 +142,6 @@ func (self *Store) GetSignature(fd io.Reader) (sgn *Signature, err error) {
 				self.backend.AddBlock(oldWeak, strong, oldBlock)
 				sgn.AddHash(oldWeak, strong)
 			}
-			if (partialReadSize == BlockSize) {
-				panic("TODO")
-			}
 			sgn.AddData(newBlock[:partialReadSize])
 			return sgn, nil
 		}

@@ -1,6 +1,7 @@
 package enki
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -137,6 +138,7 @@ func createFile(nbCopy int, name string, shift bool) string {
 	for i := 0; i < nbCopy; i++ {
 		src.Seek(0, 0)
 		io.Copy(fd, src)
+		// io.CopyN(fd, src, 1024)
 	}
 	fd.Close()
 	src.Close()
@@ -145,12 +147,11 @@ func createFile(nbCopy int, name string, shift bool) string {
 
 func checkSignature(backend Backend) {
 	store := &Store{backend}
-
 	testFiles := []TestFile{
 		{1, "small.data", false},
 		{10, "larger.data", false},
 		{200, "big.data", false},
-		{200, "big-shifted.data", true},
+		{2000, "big-shifted.data", true},
 	}
 
 	for _, tf := range testFiles {
@@ -159,28 +160,50 @@ func checkSignature(backend Backend) {
 		check(err)
 		sgn, err := store.GetSignature(fd)
 		check(err)
+		fd.Close()
 
 		fd, err = os.Open(path)
 		check(err)
-		_, err = store.GetChecksum(fd)
+		expected, err := store.GetChecksum(fd)
 		check(err)
+		fd.Close()
 
-		fd, err = os.Create(path + ".extracted")
+		extracted_path := path + ".extracted"
+		fd, err = os.Create(extracted_path)
 		check(err)
 		sgn.Extract(backend, fd)
-	}
+		fd.Close()
 
+		fd, err = os.Open(extracted_path)
+		check(err)
+		checksum, err := store.GetChecksum(fd)
+		check(err)
+		fd.Close()
+
+		if (bytes.Compare(expected, checksum) != 0) {
+			panic("Wrong checksum!")
+		}
+	}
 
 	// TODO test with non-repeating pattern content
 }
 
-func BenchmarkMemorySignature(b *testing.B) {
+func TestMemorySignature(t *testing.T) {
 	backend := NewMemoryBackend()
 	checkSignature(backend)
 }
 
-func BenchmarkBoltSignature(b *testing.B) {
+func TestBoltSignature(t *testing.T) {
 	boltBackend := NewBoltBackend("/tmp/")
-	checkSignature(boltBackend)
+	boltBackend.(*BoltBackend).Close()
+}
+
+func BenchMemorySignature(b *testing.B) {
+	backend := NewMemoryBackend()
+	checkSignature(backend)
+}
+
+func BenchBoltSignature(b *testing.B) {
+	boltBackend := NewBoltBackend("/tmp/")
 	boltBackend.(*BoltBackend).Close()
 }
