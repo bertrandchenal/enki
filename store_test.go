@@ -2,19 +2,26 @@ package enki
 
 import (
 	"bytes"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"testing"
  	"encoding/hex"
 )
 
 type TestFile struct {
-	size int
+	nbCopy int
 	name string
 	shifted bool
+	random bool
 }
 
+var memoryBackend, boltBackend Backend
+var testFiles []TestFile
+var memoryStore *Store
+var boltStore *Store
 
 func TestChecksum(t *testing.T) {
 	expect := "c709067ec00d61db0c75d35ace87e21d"
@@ -22,10 +29,7 @@ func TestChecksum(t *testing.T) {
 	check(err)
 	defer fd.Close()
 
-	backend := NewMemoryBackend()
-	store := &Store{backend}
-	result, err := store.GetChecksum(fd)
-
+	result, err := memoryStore.GetChecksum(fd)
 	if err != nil {
 		t.Errorf(err.Error())
 	}
@@ -121,54 +125,53 @@ func TestConcat(t *testing.T) {
 }
 
 
-func createFile(nbCopy int, name string, shift bool) string {
-	name = "test-enki-" + name
-	fd, err := os.Create(name)
+func initFile(testFile *TestFile) {
+	fd, err := os.Create(testFile.name)
 	check(err)
+
+	if testFile.random {
+		src := rand.Reader
+		check(err)
+		io.CopyN(fd, src, 1024 * int64(testFile.nbCopy))
+		fd.Close()
+		return
+	}
+
+
 	src, err := os.Open("32.jpg")
 	check(err)
 
 	// Shift content by inserting 1 byte at the start of the file
-	if shift {
+	if testFile.shifted {
 		head := [1]byte{}
 		src.Read(head[:])
 		fd.Write(head[:])
 	}
 
-	for i := 0; i < nbCopy; i++ {
+	for i := 0; i < testFile.nbCopy; i++ {
 		src.Seek(0, 0)
 		io.Copy(fd, src)
 		// io.CopyN(fd, src, 1024)
 	}
 	fd.Close()
 	src.Close()
-	return name
 }
 
-func checkSignature(backend Backend) {
-	store := &Store{backend}
-	testFiles := []TestFile{
-		{1, "small.data", false},
-		{10, "larger.data", false},
-		{200, "big.data", false},
-		{2000, "big-shifted.data", true},
-	}
-
+func checkSignature(backend Backend, store *Store) {
 	for _, tf := range testFiles {
-		path := createFile(tf.size, tf.name, tf.shifted)
-		fd, err := os.Open(path)
+		fd, err := os.Open(tf.name)
 		check(err)
 		sgn, err := store.GetSignature(fd)
 		check(err)
 		fd.Close()
 
-		fd, err = os.Open(path)
+		fd, err = os.Open(tf.name)
 		check(err)
 		expected, err := store.GetChecksum(fd)
 		check(err)
 		fd.Close()
 
-		extracted_path := path + ".extracted"
+		extracted_path := tf.name + ".extracted"
 		fd, err = os.Create(extracted_path)
 		check(err)
 		sgn.Extract(backend, fd)
@@ -179,7 +182,6 @@ func checkSignature(backend Backend) {
 		checksum, err := store.GetChecksum(fd)
 		check(err)
 		fd.Close()
-
 		if (bytes.Compare(expected, checksum) != 0) {
 			panic("Wrong checksum!")
 		}
@@ -189,23 +191,41 @@ func checkSignature(backend Backend) {
 }
 
 func TestMemorySignature(t *testing.T) {
-	backend := NewMemoryBackend()
-	checkSignature(backend)
+	checkSignature(memoryBackend, memoryStore)
 }
 
 func TestBoltSignature(t *testing.T) {
-	boltBackend := NewBoltBackend("/tmp/")
-	checkSignature(boltBackend)
-	boltBackend.(*BoltBackend).Close()
+	checkSignature(boltBackend, boltStore)
 }
 
 func BenchmarkMemorySignature(b *testing.B) {
-	backend := NewMemoryBackend()
-	checkSignature(backend)
+	checkSignature(memoryBackend, memoryStore)
 }
 
 func BenchmarkBoltSignature(b *testing.B) {
-	boltBackend := NewBoltBackend("/tmp/")
-	checkSignature(boltBackend)
+	checkSignature(boltBackend, boltStore)
+}
+
+func TestMain(m *testing.M) {
+	test_data := "test-data"
+	memoryBackend = NewMemoryBackend().(Backend)
+	memoryStore = &Store{memoryBackend}
+	boltBackend = NewBoltBackend(test_data)
+	boltStore = &Store{boltBackend}
+
+
+	check(os.MkdirAll(test_data, 0750))
+	testFiles = []TestFile{
+		{1, path.Join(test_data, "small.data"), false, false},
+		{10, path.Join(test_data, "larger.data"), false, false},
+		{200, path.Join(test_data, "big.data"), false, false},
+		{200, path.Join(test_data, "big-shifted.data"), true, false},
+		{2000, path.Join(test_data, "random.data"), false, true},
+	}
+	for _, tf := range testFiles {
+		initFile(&tf)
+	}
+	res := m.Run()
 	boltBackend.(*BoltBackend).Close()
+	os.Exit(res)
 }

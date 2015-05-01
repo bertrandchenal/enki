@@ -18,16 +18,15 @@ type BoltBackend struct {
 
 func NewBoltBackend(dotDir string) Backend {
 	// Create bloom
+	bloomFilter := NewBloom()
+
 	bloomPath := path.Join(dotDir, "bloom.gob")
 	bloomData, err := ioutil.ReadFile(bloomPath)
-	_, failed := err.(*os.PathError)
-	if failed {
-		bloomData = []byte{}
-	} else {
+	_, is_path_error := err.(*os.PathError)
+	if !is_path_error {
+		err = bloomFilter.GobDecode(bloomData)
 		check(err)
 	}
-	bloomFilter, err := BloomFromGob(bloomData)
-	check(err)
 
 	// Create db
 	dbPath := path.Join(dotDir, "indexes.bolt")
@@ -54,8 +53,8 @@ func NewBoltBackend(dotDir string) Backend {
 }
 
 func (self *BoltBackend) Close() {
-	self.tx.Commit()
-	self.db.Close()
+	check(self.tx.Commit())
+	check(self.db.Close())
 	bloomPath := path.Join(*self.dotDir, "bloom.gob")
 	fd, err := os.Create(bloomPath)
 	check(err)

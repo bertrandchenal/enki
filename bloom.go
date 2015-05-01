@@ -36,13 +36,8 @@ func NewBloom() *Bloom {
 	return bloom
 }
 
-func BloomFromGob(data []byte) (*Bloom, error) {
-	bloom := NewBloom()
-	err := bloom.bf.GobDecode(data)
-	if err != nil {
-		return nil, err
-	}
-	return bloom, nil
+func (self *Bloom) GobDecode(data []byte) (error) {
+	return self.bf.GobDecode(data)
 }
 
 func (self *Bloom) GobEncode() ([]byte, error) {
