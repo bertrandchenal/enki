@@ -5,6 +5,7 @@ type MemoryBackend struct {
 	BlockMap map[StrongHash]Block
 	WeakMap map[WeakHash]bool
 	SignatureMap map[string]*Signature
+	StateMap map[int64]*DirState
 	bloomFilter *Bloom
 }
 
@@ -14,6 +15,7 @@ func NewMemoryBackend() Backend {
 	backend.BlockMap = make(map[StrongHash]Block)
 	backend.WeakMap = make(map[WeakHash]bool)
 	backend.SignatureMap = make(map[string]*Signature)
+	backend.StateMap = make(map[int64]*DirState)
 	return backend
 }
 
@@ -26,9 +28,12 @@ func (self *MemoryBackend) AddBlock(weak WeakHash, strong *StrongHash, data Bloc
 	}
 }
 
-func (self *MemoryBackend) GetStrong(strong *StrongHash) (Block, bool) {
+func (self *MemoryBackend) GetStrong(strong *StrongHash) Block {
 	block, present := self.BlockMap[*strong]
-	return block, present
+	if !present {
+		return nil
+	}
+	return block
 }
 
 func (self *MemoryBackend) SearchWeak(weak WeakHash) bool {
@@ -38,11 +43,26 @@ func (self *MemoryBackend) SearchWeak(weak WeakHash) bool {
 	return false
 }
 
-func (self *MemoryBackend) GetSignature(id string) (*Signature, bool) {
-	sgn, present := self.SignatureMap[id]
-	return sgn, present
+func (self *MemoryBackend) GetSignature(checksum []byte) *Signature {
+	sgn, present := self.SignatureMap[string(checksum)]
+	if !present {
+		return nil
+	}
+	return sgn
 }
 
-func (self *MemoryBackend) SetSignature(id string, sgn *Signature) {
-	self.SignatureMap[id] = sgn
+func (self *MemoryBackend) SetSignature(checksum []byte, sgn *Signature) {
+	self.SignatureMap[string(checksum)] = sgn
+}
+
+func (self *MemoryBackend) GetState(id int64) *DirState {
+	st, present := self.StateMap[id]
+	if !present {
+		return nil
+	}
+	return st
+}
+
+func (self *MemoryBackend) SetState(st *DirState) {
+	self.StateMap[st.Timestamp] = st
 }
