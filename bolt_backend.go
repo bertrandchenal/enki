@@ -115,7 +115,6 @@ func (self *BoltBackend) SetSignature(checksum []byte, sgn *Signature) {
 	self.signatureBucket.Put(checksum, data)
 }
 
-
 func (self *BoltBackend) GetState(timestamp int64) *DirState {
 	var data []byte
 	var foundkey []byte
@@ -124,7 +123,7 @@ func (self *BoltBackend) GetState(timestamp int64) *DirState {
 		_, data = cursor.Last()
 	} else {
 		key := make([]byte, 8)
-		binary.PutVarint(key, timestamp)
+		binary.BigEndian.PutUint64(key, uint64(timestamp))
 		foundkey, data = cursor.Seek(key)
 		if !bytes.Equal(key, foundkey) {
 			_, data = cursor.Prev()
@@ -140,7 +139,7 @@ func (self *BoltBackend) GetState(timestamp int64) *DirState {
 
 func (self *BoltBackend) SetState(state *DirState) {
 	key := make([]byte, 8)
-	binary.PutVarint(key, state.Timestamp)
+	binary.BigEndian.PutUint64(key, uint64(state.Timestamp))
 	data := state.GobEncode()
 	self.stateBucket.Put(key, data)
 }

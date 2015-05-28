@@ -8,6 +8,7 @@ type Backend interface {
 	SetSignature([]byte, *Signature)
 	GetState(int64) *DirState
 	SetState(*DirState)
+	Close()
 }
 
 

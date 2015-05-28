@@ -29,7 +29,7 @@ func (self *Blob) GetSignature(fd io.Reader) (sgn *Signature, err error) {
 	var isRolling, matchFound, eofReached bool
 	var data []byte
 	oldBlock := Block{}
-	newBlock  := Block{}
+	newBlock := Block{}
 	fullBlock := Block(make([]byte, BlockSize))
 	sgn = &Signature{}
 

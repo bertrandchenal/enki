@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"time"
@@ -25,12 +26,12 @@ type DirState struct {
 	backend Backend
 	dirty []string
 	prevState *DirState
+	root string
 }
 
 func NewDirState(path string, backend Backend) *DirState {
 	fstates := make(map[string]FileState)
 	prevState := LastState(backend)
-
 	if prevState == nil {
 		prevState = &DirState{
 			FileStates: make(map[string]FileState),
@@ -42,7 +43,9 @@ func NewDirState(path string, backend Backend) *DirState {
 		FileStates: fstates,
 		prevState: prevState,
 		backend: backend,
+		root: path,
 	}
+
 	state.scan(path)
 	return state
 }
@@ -58,15 +61,19 @@ func (self *DirState) append(path string, info os.FileInfo, err error) error {
 		return nil
 	}
 
-	fstate, present := self.prevState.FileStates[path]
+	relpath, err := filepath.Rel(self.root, path)
+	check(err)
+
+	fstate, present := self.prevState.FileStates[relpath]
 	ts := info.ModTime().Unix()
+
 	if !present {
 		// New file
 		fstate.Timestamp = ts
 		fstate.Checksum, err = GetChecksum(path)
 		check(err)
-		self.FileStates[path] = fstate
-		self.dirty = append(self.dirty, path)
+		self.FileStates[relpath] = fstate
+		self.dirty = append(self.dirty, relpath)
 	} else if ts != fstate.Timestamp {
 		// Existing file but new timestamp
 		checksum, err := GetChecksum(path)
@@ -74,13 +81,13 @@ func (self *DirState) append(path string, info os.FileInfo, err error) error {
 		newState := FileState{}
 		newState.Timestamp = ts
 		newState.Checksum = checksum
-		self.FileStates[path] = newState
+		self.FileStates[relpath] = newState
 		if !bytes.Equal(checksum, fstate.Checksum) {
-			self.dirty = append(self.dirty, path)
+			self.dirty = append(self.dirty, relpath)
 		}
 	} else {
 		// No changes
-		self.FileStates[path] = fstate
+		self.FileStates[relpath] = fstate
 	}
 
 	return nil
@@ -113,16 +120,18 @@ func (self *DirState) Snapshot() {
 		log.Print("Nothing to do")
 		return		
 	}
-	for _, path := range self.dirty {
+	for _, relpath := range self.dirty {
 		blob := &Blob{self.backend}
-		state, present := self.FileStates[path]
+		state, present := self.FileStates[relpath]
 		if !present {
 			panic("Unexpected Error")
 		}
-		fd, err := os.Open(path)
+
+		abspath := path.Join(self.root, relpath)
+		fd, err := os.Open(abspath)
 		check(err)
 		defer fd.Close()
-		log.Print("Add ", path)
+		log.Print("Add ", relpath)
 		blob.Snapshot(state.Checksum, fd)
 	}
 	self.backend.SetState(self)

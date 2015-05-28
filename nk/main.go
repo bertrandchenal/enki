@@ -48,11 +48,11 @@ func createSnapshot(c *cli.Context) {
 	dry_run := c.GlobalBool("dry-run")
 	root := c.GlobalString("root")
 	backend := getBackend(c)
-	defer backend.(*enki.BoltBackend).Close() //FIXME ugly
+	defer backend.Close()
 	currentState := enki.NewDirState(root, backend)
 
 	if dry_run {
-		return // TODO givr info
+		return // TODO give info
 	}
 	currentState.Snapshot()
 }

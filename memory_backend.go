@@ -66,3 +66,7 @@ func (self *MemoryBackend) GetState(id int64) *DirState {
 func (self *MemoryBackend) SetState(st *DirState) {
 	self.StateMap[st.Timestamp] = st
 }
+
+func (self *MemoryBackend) Close() {
+	// pass
+}
