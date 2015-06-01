@@ -6,6 +6,11 @@ import (
 	"io"
 )
 
+const (
+	DATA_SGM = iota
+	HASH_SGM = iota
+)
+
 type Segment struct {
 	Mode int
 	Weakhash WeakHash
@@ -52,7 +57,7 @@ func (self *Signature) Extract(backend Backend, w io.Writer) {
 func (self *Signature) GobDecode(data []byte) error {
 	buf := bytes.NewBuffer(data)
     d := gob.NewDecoder(buf)
-    err := d.Decode(self)
+    err := d.Decode(&self.Segments)
 	return err
 }
 

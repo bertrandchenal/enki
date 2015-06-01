@@ -10,8 +10,3 @@ type Backend interface {
 	SetState(*DirState)
 	Close()
 }
-
-
-func LastState(b Backend) *DirState {
-	return b.GetState(MAXTIMESTAMP)
-}

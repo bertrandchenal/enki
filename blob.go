@@ -10,8 +10,6 @@ const (
 	StrongHashSize = md5.Size
 	BlockSize = 1024 * 64
 	M         = 1 << 16
-	DATA_SGM = iota
-	HASH_SGM = iota
 )
 
 type Block []byte

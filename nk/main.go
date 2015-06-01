@@ -40,8 +40,17 @@ func showStatus(c *cli.Context) {
 }
 
 func restoreSnapshot(c *cli.Context) {
-	println(c.GlobalBool("dry-run"))
-	println("added task: ", c.Args().First())
+	dry_run := c.GlobalBool("dry-run")
+	root := c.GlobalString("root")
+	backend := getBackend(c)
+	defer backend.Close()
+	prevState := enki.LastState(backend)
+	currentState := enki.NewDirState(root, prevState)
+
+	if dry_run {
+		return // TODO give info
+	}
+	currentState.RestorePrev(backend)
 }
 
 func createSnapshot(c *cli.Context) {
@@ -49,12 +58,13 @@ func createSnapshot(c *cli.Context) {
 	root := c.GlobalString("root")
 	backend := getBackend(c)
 	defer backend.Close()
-	currentState := enki.NewDirState(root, backend)
+	prevState := enki.LastState(backend)
+	currentState := enki.NewDirState(root, prevState)
 
 	if dry_run {
 		return // TODO give info
 	}
-	currentState.Snapshot()
+	currentState.Snapshot(backend)
 }
 
 func initRepo(c *cli.Context) {
