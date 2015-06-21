@@ -69,11 +69,11 @@ func restoreSnapshot(c *cli.Context) {
 	defer backend.Close()
 
 	if len(c.Args()) > 0 {
+		user_time := c.Args()[0]
 		loc, _ := time.LoadLocation("Local")
-
 		// Try to interpret the given string
 		for _, format := range READ_TIME {
-			ts, err = time.ParseInLocation(format, c.Args()[0], loc)
+			ts, err = time.ParseInLocation(format, user_time, loc)
 			if err == nil {
 				break
 			}
@@ -83,6 +83,10 @@ func restoreSnapshot(c *cli.Context) {
 			return
 		}
 		prevState = backend.GetState(ts.Unix())
+		if prevState == nil {
+			fmt.Printf("No snapshot found for '%v'\n", user_time)
+			return
+		}
 	} else {
 		prevState = enki.LastState(backend)
 	}
@@ -142,7 +146,7 @@ func main() {
 			Action: showStatus,
 		},
 	}
-	
+
 	app.Flags = []cli.Flag {
 		cli.BoolFlag{
 			Name: "dry-run, n",
