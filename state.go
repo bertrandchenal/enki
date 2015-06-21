@@ -89,6 +89,8 @@ func (self *DirState) append(path string, info os.FileInfo, err error) error {
 		self.FileStates[relpath] = newState
 		if !bytes.Equal(checksum, fstate.Checksum) {
 			self.dirty[relpath] = CHANGED_FILE
+		} else {
+			// TODO correct fstate.Timestamp mismatch (content is ok but not modification date)
 		}
 	} else {
 		// No changes

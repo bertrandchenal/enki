@@ -1,14 +1,19 @@
 package main
 
 import (
+	"fmt"
 	"bitbucket.org/bertrandchenal/enki"
 	"github.com/codegangsta/cli"
 	"log"
 	"os"
 	"path"
+	"time"
 )
 
-const dotEnki = ".nk"
+const (
+	dotEnki = ".nk"
+	TIME_FMT = "2006-01-02T15:04:05"
+)
 
 func getBackend(c *cli.Context) enki.Backend {
 	dotDir := path.Join(c.GlobalString("root"), dotEnki)
@@ -32,7 +37,14 @@ func getBackend(c *cli.Context) enki.Backend {
 }
 
 func showLogs(c *cli.Context) {
-	println("added task: ", c.Args().First())
+	backend := getBackend(c)
+	defer backend.Close()
+	lastState := enki.LastState(backend)
+	for lastState != nil {
+		ts := time.Unix(lastState.Timestamp, 0)
+		println(ts.Format(TIME_FMT))
+		lastState = backend.GetState(lastState.Timestamp - 1)
+	}
 }
 
 func showStatus(c *cli.Context) {
@@ -40,30 +52,36 @@ func showStatus(c *cli.Context) {
 }
 
 func restoreSnapshot(c *cli.Context) {
-	dry_run := c.GlobalBool("dry-run")
+	var prevState *enki.DirState
 	root := c.GlobalString("root")
 	backend := getBackend(c)
 	defer backend.Close()
-	prevState := enki.LastState(backend)
-	currentState := enki.NewDirState(root, prevState)
 
-	if dry_run {
-		return // TODO give info
+	if len(c.Args()) > 0 {
+		loc, _ := time.LoadLocation("Local")
+		ts, err := time.ParseInLocation(TIME_FMT, c.Args()[0], loc)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		prevState = backend.GetState(ts.Unix())
+	} else {
+		prevState = enki.LastState(backend)
 	}
+
+	currentState := enki.NewDirState(root, prevState)
 	currentState.RestorePrev(backend)
 }
 
 func createSnapshot(c *cli.Context) {
-	dry_run := c.GlobalBool("dry-run")
 	root := c.GlobalString("root")
 	backend := getBackend(c)
 	defer backend.Close()
+
+
 	prevState := enki.LastState(backend)
 	currentState := enki.NewDirState(root, prevState)
 
-	if dry_run {
-		return // TODO give info
-	}
 	currentState.Snapshot(backend)
 }
 
