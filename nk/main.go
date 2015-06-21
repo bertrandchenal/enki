@@ -12,8 +12,14 @@ import (
 
 const (
 	dotEnki = ".nk"
-	TIME_FMT = "2006-01-02T15:04:05"
+	FULL_FMT = "2006-01-02T15:04:05"
+	YEAR_FMT = "2006"
+	MONTH_FMT = "2006-01"
+	DAY_FMT = "2006-01-02"
+	HOUR_FMT = "2006-01-02T15"
+	MIN_FMT = "2006-01-02T15:04"
 )
+
 
 func getBackend(c *cli.Context) enki.Backend {
 	dotDir := path.Join(c.GlobalString("root"), dotEnki)
@@ -42,7 +48,7 @@ func showLogs(c *cli.Context) {
 	lastState := enki.LastState(backend)
 	for lastState != nil {
 		ts := time.Unix(lastState.Timestamp, 0)
-		println(ts.Format(TIME_FMT))
+		println(ts.Format(FULL_FMT))
 		lastState = backend.GetState(lastState.Timestamp - 1)
 	}
 }
@@ -53,13 +59,25 @@ func showStatus(c *cli.Context) {
 
 func restoreSnapshot(c *cli.Context) {
 	var prevState *enki.DirState
+	var err error
+	var ts time.Time
+	READ_TIME := [...]string{FULL_FMT, YEAR_FMT, MONTH_FMT, DAY_FMT, HOUR_FMT,
+		MIN_FMT}
+
 	root := c.GlobalString("root")
 	backend := getBackend(c)
 	defer backend.Close()
 
 	if len(c.Args()) > 0 {
 		loc, _ := time.LoadLocation("Local")
-		ts, err := time.ParseInLocation(TIME_FMT, c.Args()[0], loc)
+
+		// Try to interpret the given string
+		for _, format := range READ_TIME {
+			ts, err = time.ParseInLocation(format, c.Args()[0], loc)
+			if err == nil {
+				break
+			}
+		}
 		if err != nil {
 			fmt.Println(err)
 			return

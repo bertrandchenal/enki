@@ -144,6 +144,7 @@ func (self *DirState) RestorePrev(backend Backend) {
 	for relpath, reason := range self.dirty {
 		if reason == NEW_FILE {
 			abspath := path.Join(self.root, relpath)
+			log.Print("Delete ", relpath)
 			err := os.Remove(abspath)
 			check(err)
 		}
