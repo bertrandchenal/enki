@@ -17,18 +17,19 @@ const (
 	MAXTIMESTAMP = 1<<63 - 1
 	NEW_FILE = iota
 	CHANGED_FILE = iota
+	DELETED_FILE = iota
 )
 
 type FileState struct {
 	Timestamp int64
 	Checksum []byte
+	Status int
 }
 
 type DirState struct {
 	Timestamp int64
 	FileStates map[string]FileState
 	backend Backend
-	dirty map[string]int
 	prevState *DirState
 	root string
 }
@@ -45,12 +46,13 @@ func NewDirState(path string, prevState *DirState) *DirState {
 		Timestamp: time.Now().Unix(),
 		FileStates: fstates,
 		prevState: prevState,
-		dirty: make(map[string]int),
 		root: path,
 	}
 
 	err := filepath.Walk(path, state.append)
 	check(err)
+
+	state.detect_deletion()
 	return state
 }
 
@@ -78,7 +80,7 @@ func (self *DirState) append(path string, info os.FileInfo, err error) error {
 		fstate.Checksum, err = GetChecksum(path)
 		check(err)
 		self.FileStates[relpath] = fstate
-		self.dirty[relpath] = NEW_FILE
+		fstate.Status = NEW_FILE
 	} else if ts != fstate.Timestamp {
 		// Existing file but new timestamp
 		checksum, err := GetChecksum(path)
@@ -88,7 +90,7 @@ func (self *DirState) append(path string, info os.FileInfo, err error) error {
 		newState.Checksum = checksum
 		self.FileStates[relpath] = newState
 		if !bytes.Equal(checksum, fstate.Checksum) {
-			self.dirty[relpath] = CHANGED_FILE
+			fstate.Status = CHANGED_FILE
 		} else {
 			// TODO correct fstate.Timestamp mismatch (content is ok but not modification date)
 		}
@@ -105,10 +107,10 @@ func (self *DirState) Checksum() []byte {
 	checksum := md5.New()
 
 	var keys []string
-    for k := range self.FileStates {
-        keys = append(keys, k)
-    }
-    sort.Strings(keys)
+	for k := range self.FileStates {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 
 	for _, path := range keys {
 		file_cs := self.FileStates[path]
@@ -118,51 +120,56 @@ func (self *DirState) Checksum() []byte {
 	return checksum.Sum(nil)
 }
 
-func (self *DirState) Snapshot(backend Backend) {
-	if len(self.dirty) == 0 {
-		return		
-	}
-	for relpath, _ := range self.dirty {
-		blob := &Blob{backend}
-		state, present := self.FileStates[relpath]
-		if !present {
-			panic("Unexpected Error")
+func (self *DirState) detect_deletion() {
+	for relpath, state := range self.prevState.FileStates {
+		_, present := self.FileStates[relpath]
+		if present {
+			continue
 		}
+		state.Status = DELETED_FILE
+		self.FileStates[relpath] = state
+	}
+}
 
+func (self *DirState) Snapshot(backend Backend) {
+	snapped := false
+	for relpath, state := range self.FileStates {
+		if !state.Dirty() {
+			continue
+		}
+		blob := &Blob{backend}
 		abspath := path.Join(self.root, relpath)
 		fd, err := os.Open(abspath)
 		check(err)
 		defer fd.Close()
 		log.Print("Add ", relpath)
 		blob.Snapshot(state.Checksum, fd)
+		snapped = true
 	}
-	backend.SetState(self)
+	if snapped {
+		backend.SetState(self)
+	}
 }
 
 func (self *DirState) RestorePrev(backend Backend) {
 	// Remove files not in prevState
-	for relpath, reason := range self.dirty {
-		if reason == NEW_FILE {
+	for relpath, state := range self.FileStates {
+		if state.Status == NEW_FILE {
 			abspath := path.Join(self.root, relpath)
 			log.Print("Delete ", relpath)
 			err := os.Remove(abspath)
 			check(err)
 		}
-	}
 
-	// Restore missing & modfied files
-	for relpath, state := range self.prevState.FileStates {
-		_, present := self.FileStates[relpath]
-		_, is_dirty := self.dirty[relpath]
-		if present && !is_dirty {
+		if !(self.Status == CHANGED_FILE || state.Status == DELETED_FILE) {
 			continue
 		}
+
+		// Restore missing & modfied files
 		blob := &Blob{backend}
 		abspath := path.Join(self.root, relpath)
 
-		var fd *os.File
-		_, err := os.Stat(abspath)
-		if os.IsNotExist(err) {
+		if state.Status == DELETED_FILE {
 			fd, err = os.Create(abspath)
 		} else {
 			fd, err = os.Open(abspath)
@@ -174,7 +181,6 @@ func (self *DirState) RestorePrev(backend Backend) {
 		atime := time.Now()
 		mtime := time.Unix(state.Timestamp, 0)
 		os.Chtimes(abspath, atime, mtime)
-	}
 }
 
 func (self *DirState) GobEncode() []byte {
@@ -194,4 +200,8 @@ func (self *DirState) GobDecode(data []byte) {
 
 func LastState(b Backend) *DirState {
 	return b.GetState(MAXTIMESTAMP)
+}
+
+func (self *FileState) Dirty() {
+	return self.Status == NEW_FILE || self.Status == CHANGED_FILE
 }
