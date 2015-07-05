@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"sort"
 	"time"
 )
 
@@ -18,12 +19,19 @@ const (
 	DAY_FMT = "2006-01-02"
 	HOUR_FMT = "2006-01-02T15"
 	MIN_FMT = "2006-01-02T15:04"
+
+	ANSI_RED = "\x1b[31;1m"
+	ANSI_BLUE = "\x1b[34;1m"
+	ANSI_GREEN = "\x1b[32;1m"
+	ANSI_RESET = "\x1b[0m"
 )
 
 
 func getBackend(c *cli.Context) enki.Backend {
 	dotDir := path.Join(c.GlobalString("root"), dotEnki)
 	info, err := os.Stat(dotDir)
+
+
 
 	if err == nil {
 		if !info.IsDir() {
@@ -54,7 +62,38 @@ func showLogs(c *cli.Context) {
 }
 
 func showStatus(c *cli.Context) {
-	println("added task: ", c.Args().First())
+	var prefix, color string
+	var names []string
+
+	root := c.GlobalString("root")
+	backend := getBackend(c)
+	defer backend.Close()
+
+	prevState := enki.LastState(backend)
+	currentState := enki.NewDirState(root, prevState)
+
+	for name, _ := range currentState.FileStates {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		fstate := currentState.FileStates[name]
+		switch {
+		case fstate.Status == enki.NEW_FILE:
+			prefix = "N"
+			color = ANSI_GREEN
+		case fstate.Status == enki.CHANGED_FILE:
+			prefix = "M"
+			color = ANSI_BLUE
+		case fstate.Status == enki.DELETED_FILE:
+			prefix = "D"
+			color = ANSI_RED
+		default:
+			continue
+		}
+		fmt.Printf("%v%v%v %v\n", color, prefix, ANSI_RESET, name)
+	}
 }
 
 func restoreSnapshot(c *cli.Context) {

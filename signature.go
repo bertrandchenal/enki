@@ -66,6 +66,6 @@ func (self *Signature) GobEncode() ([]byte, error) {
     e := gob.NewEncoder(&buf)
 
 	// Encoding the map
-    err := e.Encode(self.Segments)
+    err := e.Encode(self.Segments) //FIXME fail if file is empty
 	return buf.Bytes(), err
 }

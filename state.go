@@ -71,34 +71,32 @@ func (self *DirState) append(path string, info os.FileInfo, err error) error {
 	relpath, err := filepath.Rel(self.root, path)
 	check(err)
 
-	fstate, present := self.prevState.FileStates[relpath]
+	prevState, present := self.prevState.FileStates[relpath]
 	ts := info.ModTime().Unix()
+	newState := FileState{}
+	newState.Timestamp = ts
 
 	if !present {
 		// New file
-		fstate.Timestamp = ts
-		fstate.Checksum, err = GetChecksum(path)
+		newState.Checksum, err = GetChecksum(path)
 		check(err)
-		self.FileStates[relpath] = fstate
-		fstate.Status = NEW_FILE
-	} else if ts != fstate.Timestamp {
+		newState.Status = NEW_FILE
+		self.FileStates[relpath] = newState
+
+	} else if ts != prevState.Timestamp {
 		// Existing file but new timestamp
 		checksum, err := GetChecksum(path)
 		check(err)
-		newState := FileState{}
-		newState.Timestamp = ts
 		newState.Checksum = checksum
-		self.FileStates[relpath] = newState
-		if !bytes.Equal(checksum, fstate.Checksum) {
-			fstate.Status = CHANGED_FILE
-		} else {
-			// TODO correct fstate.Timestamp mismatch (content is ok but not modification date)
+		if !bytes.Equal(checksum, prevState.Checksum) {
+			newState.Status = CHANGED_FILE
 		}
+		self.FileStates[relpath] = newState
 	} else {
 		// No changes
-		self.FileStates[relpath] = fstate
+		newState.Checksum = prevState.Checksum
+		self.FileStates[relpath] = newState
 	}
-
 	return nil
 } 
 
@@ -152,16 +150,18 @@ func (self *DirState) Snapshot(backend Backend) {
 }
 
 func (self *DirState) RestorePrev(backend Backend) {
+	var fd io.ReadWriteCloser
+	var err error
 	// Remove files not in prevState
 	for relpath, state := range self.FileStates {
 		if state.Status == NEW_FILE {
 			abspath := path.Join(self.root, relpath)
 			log.Print("Delete ", relpath)
-			err := os.Remove(abspath)
+			err = os.Remove(abspath)
 			check(err)
 		}
 
-		if !(self.Status == CHANGED_FILE || state.Status == DELETED_FILE) {
+		if !(state.Status == CHANGED_FILE || state.Status == DELETED_FILE) {
 			continue
 		}
 
@@ -181,6 +181,7 @@ func (self *DirState) RestorePrev(backend Backend) {
 		atime := time.Now()
 		mtime := time.Unix(state.Timestamp, 0)
 		os.Chtimes(abspath, atime, mtime)
+	}
 }
 
 func (self *DirState) GobEncode() []byte {
@@ -202,6 +203,6 @@ func LastState(b Backend) *DirState {
 	return b.GetState(MAXTIMESTAMP)
 }
 
-func (self *FileState) Dirty() {
+func (self *FileState) Dirty() bool {
 	return self.Status == NEW_FILE || self.Status == CHANGED_FILE
 }
