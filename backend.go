@@ -3,10 +3,10 @@ package enki
 type Backend interface {
 	AddBlock(WeakHash, *StrongHash, Block)
 	SearchWeak(WeakHash) bool
-	GetStrong(*StrongHash) Block
-	GetSignature([]byte) *Signature
-	SetSignature([]byte, *Signature)
-	GetState(int64) *DirState
-	SetState(*DirState)
+	ReadStrong(*StrongHash) Block
+	ReadSignature([]byte) *Signature
+	WriteSignature([]byte, *Signature)
+	ReadState(int64) *DirState
+	WriteState(*DirState)
 	Close()
 }

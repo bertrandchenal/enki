@@ -19,6 +19,7 @@ const NBFUNC = uint(10)
 
 type BoltBackend struct {
 	bloomFilter *Bloom
+	blockFile *os.File
 	db *bolt.DB
 	dotDir *string
 	signatureBucket *bolt.Bucket
@@ -39,6 +40,17 @@ func NewBoltBackend(dotDir string) Backend {
 		check(err)
 	}
 
+	// Create file containing blocks
+	var blockFile *os.File
+	var err error
+	blockPath := path.Join(dotDir, "blocks.blob")
+	if _, err = os.Stat(blockPath); err == nil {
+		blockFile, err = os.OpenFile(blockPath, os.O_RDWR|os.O_APPEND, 0660)
+	} else {
+		blockFile, err = os.Create(blockPath)
+	}
+	check(err)
+
 	// Create db
 	dbPath := path.Join(dotDir, "indexes.bolt")
     db, err := bolt.Open(dbPath, 0600, nil)
@@ -56,6 +68,7 @@ func NewBoltBackend(dotDir string) Backend {
 
 	backend := &BoltBackend{
 		bloomFilter,
+		blockFile,
 		db,
 		&dotDir,
 		signatureBucket,
@@ -74,6 +87,8 @@ func (self *BoltBackend) Close() {
 	check(err)
 	data, err := self.bloomFilter.GobEncode()
 	fd.Write(data)
+	fd.Close()
+	self.blockFile.Close()
 }
 
 func (self *BoltBackend) Abort() {
@@ -81,16 +96,33 @@ func (self *BoltBackend) Abort() {
 }
 
 func (self *BoltBackend) AddBlock(weak WeakHash, strong *StrongHash, data Block) {
-	// FIXME data should be stored in a 'blob of blob' file, not in the index
 	value := self.strongBucket.Get(strong[:])
 	if value == nil {
+		info, err := self.blockFile.Stat()
+		check(err)
+		position := make([]byte, 8)
+		binary.PutVarint(position, info.Size())
+		self.strongBucket.Put(strong[:], position)
+		self.blockFile.Seek(0, 2)
+		_, err = self.blockFile.Write(data)
+		check(err)
 		self.bloomFilter.Add(weak)
-		self.strongBucket.Put(strong[:], data)
 	}
 }
 
-func (self *BoltBackend) GetStrong(strong *StrongHash) Block {
-	value := self.strongBucket.Get(strong[:])
+func (self *BoltBackend) ReadStrong(strong *StrongHash) Block {
+	bpos := self.strongBucket.Get(strong[:])
+	if bpos == nil {
+		return nil
+	}
+	position, status := binary.Varint(bpos)
+	if (status <= 0) {
+		panic("Integer conversion error")
+	}
+	self.blockFile.Seek(position, 0)
+	value := make([]byte, BlockSize)
+	_, err := self.blockFile.Read(value)
+	check(err)
 	return value
 }
 
@@ -98,7 +130,7 @@ func (self *BoltBackend) SearchWeak(weak WeakHash) bool {
 	return self.bloomFilter.Test(weak)
 }
 
-func (self *BoltBackend) GetSignature(checksum []byte) *Signature {
+func (self *BoltBackend) ReadSignature(checksum []byte) *Signature {
 	sgn := &Signature{}
 	data := self.signatureBucket.Get(checksum)
 	if data == nil {
@@ -109,13 +141,13 @@ func (self *BoltBackend) GetSignature(checksum []byte) *Signature {
 	return sgn
 }
 
-func (self *BoltBackend) SetSignature(checksum []byte, sgn *Signature) {
+func (self *BoltBackend) WriteSignature(checksum []byte, sgn *Signature) {
 	data, err := sgn.GobEncode()
 	check(err)
 	self.signatureBucket.Put(checksum, data)
 }
 
-func (self *BoltBackend) GetState(timestamp int64) *DirState {
+func (self *BoltBackend) ReadState(timestamp int64) *DirState {
 	var data []byte
 	var foundkey []byte
     cursor := self.stateBucket.Cursor()
@@ -137,7 +169,7 @@ func (self *BoltBackend) GetState(timestamp int64) *DirState {
 	return state
 }
 
-func (self *BoltBackend) SetState(state *DirState) {
+func (self *BoltBackend) WriteState(state *DirState) {
 	key := make([]byte, 8)
 	binary.BigEndian.PutUint64(key, uint64(state.Timestamp))
 	data := state.GobEncode()

@@ -45,7 +45,7 @@ func (self *Signature) Extract(backend Backend, w io.Writer) {
 		if segment.Mode == DATA_SGM {
 			w.Write(segment.Data)
 		} else if segment.Mode == HASH_SGM {
-			data := backend.GetStrong(segment.Stronghash)
+			data := backend.ReadStrong(segment.Stronghash)
 			if data == nil {
 				panic("Hash not found in backend")
 			}

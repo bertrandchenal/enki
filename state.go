@@ -145,7 +145,7 @@ func (self *DirState) Snapshot(backend Backend) {
 		snapped = true
 	}
 	if snapped {
-		backend.SetState(self)
+		backend.WriteState(self)
 	}
 }
 
@@ -200,7 +200,7 @@ func (self *DirState) GobDecode(data []byte) {
 }
 
 func LastState(b Backend) *DirState {
-	return b.GetState(MAXTIMESTAMP)
+	return b.ReadState(MAXTIMESTAMP)
 }
 
 func (self *FileState) Dirty() bool {

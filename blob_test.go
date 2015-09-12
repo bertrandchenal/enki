@@ -158,7 +158,7 @@ func checkSignature(backend Backend, blob *Blob) {
 	for _, tf := range testFiles {
 		fd, err := os.Open(tf.name)
 		check(err)
-		sgn, err := blob.GetSignature(fd)
+		sgn, err := blob.BuildSignature(fd)
 		check(err)
 		fd.Close()
 
@@ -196,11 +196,18 @@ func BenchmarkBoltSignature(b *testing.B) {
 }
 
 func TestMain(m *testing.M) {
+	dotDir := path.Join(test_data, ".nk")
+	_, err := os.Stat(dotDir)
+	if os.IsNotExist(err) {
+		os.Mkdir(dotDir, 0750)
+	} else {
+		check(err)
+	}
+
 	memoryBackend = NewMemoryBackend().(Backend)
 	memoryBlob = &Blob{memoryBackend}
-	boltBackend = NewBoltBackend(test_data)
+	boltBackend = NewBoltBackend(dotDir)
 	boltBlob = &Blob{boltBackend}
-
 
 	check(os.MkdirAll(test_data, 0750))
 	testFiles = []TestFile{

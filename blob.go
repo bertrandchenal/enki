@@ -21,7 +21,7 @@ type Blob struct {
 
 
 
-func (self *Blob) GetSignature(fd io.Reader) (sgn *Signature, err error) {
+func (self *Blob) BuildSignature(fd io.Reader) (sgn *Signature, err error) {
 	var aweak, bweak, weak, oldWeak WeakHash
 	var readSize, partialReadSize, blockOffset, lastMatch int64
 	var isRolling, matchFound, eofReached bool
@@ -146,7 +146,7 @@ func (self *Blob) GetSignature(fd io.Reader) (sgn *Signature, err error) {
 				newBlock[:blockOffset],
 			)
 			strong := GetStrongHash(fullBlock[:])
-			if self.backend.GetStrong(strong) != nil {
+			if self.backend.ReadStrong(strong) != nil {
 				matchFound = true
 				sgn.AddData(oldBlock[lastMatch:blockOffset])
 				sgn.AddHash(weak, strong)
@@ -157,7 +157,7 @@ func (self *Blob) GetSignature(fd io.Reader) (sgn *Signature, err error) {
 }
 
 func (self *Blob) Restore(checksum []byte, w io.Writer) (nb_bytes int){
-	sgn := self.backend.GetSignature(checksum)
+	sgn := self.backend.ReadSignature(checksum)
 	if sgn == nil {
 		return 0
 	}
@@ -166,9 +166,9 @@ func (self *Blob) Restore(checksum []byte, w io.Writer) (nb_bytes int){
 }
 
 func (self *Blob) Snapshot(checksum []byte, fd io.Reader) {
-	sgn, err := self.GetSignature(fd)
+	sgn, err := self.BuildSignature(fd)
 	check(err)
-	self.backend.SetSignature(checksum, sgn)
+	self.backend.WriteSignature(checksum, sgn)
 }
 // Returns a strong hash for a given block of data
 func GetStrongHash(v Block) *StrongHash {

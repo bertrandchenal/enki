@@ -28,7 +28,7 @@ func (self *MemoryBackend) AddBlock(weak WeakHash, strong *StrongHash, data Bloc
 	}
 }
 
-func (self *MemoryBackend) GetStrong(strong *StrongHash) Block {
+func (self *MemoryBackend) ReadStrong(strong *StrongHash) Block {
 	block, present := self.BlockMap[*strong]
 	if !present {
 		return nil
@@ -43,7 +43,7 @@ func (self *MemoryBackend) SearchWeak(weak WeakHash) bool {
 	return false
 }
 
-func (self *MemoryBackend) GetSignature(checksum []byte) *Signature {
+func (self *MemoryBackend) ReadSignature(checksum []byte) *Signature {
 	sgn, present := self.SignatureMap[string(checksum)]
 	if !present {
 		return nil
@@ -51,11 +51,11 @@ func (self *MemoryBackend) GetSignature(checksum []byte) *Signature {
 	return sgn
 }
 
-func (self *MemoryBackend) SetSignature(checksum []byte, sgn *Signature) {
+func (self *MemoryBackend) WriteSignature(checksum []byte, sgn *Signature) {
 	self.SignatureMap[string(checksum)] = sgn
 }
 
-func (self *MemoryBackend) GetState(id int64) *DirState {
+func (self *MemoryBackend) ReadState(id int64) *DirState {
 	st, present := self.StateMap[id]
 	if !present {
 		return nil
@@ -63,7 +63,7 @@ func (self *MemoryBackend) GetState(id int64) *DirState {
 	return st
 }
 
-func (self *MemoryBackend) SetState(st *DirState) {
+func (self *MemoryBackend) WriteState(st *DirState) {
 	self.StateMap[st.Timestamp] = st
 }
 

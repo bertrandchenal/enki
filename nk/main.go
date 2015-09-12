@@ -57,7 +57,7 @@ func showLogs(c *cli.Context) {
 	for lastState != nil {
 		ts := time.Unix(lastState.Timestamp, 0)
 		println(ts.Format(FULL_FMT))
-		lastState = backend.GetState(lastState.Timestamp - 1)
+		lastState = backend.ReadState(lastState.Timestamp - 1)
 	}
 }
 
@@ -121,7 +121,7 @@ func restoreSnapshot(c *cli.Context) {
 			fmt.Println(err)
 			return
 		}
-		prevState = backend.GetState(ts.Unix())
+		prevState = backend.ReadState(ts.Unix())
 		if prevState == nil {
 			fmt.Printf("No snapshot found for '%v'\n", user_time)
 			return

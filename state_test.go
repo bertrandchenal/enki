@@ -10,13 +10,11 @@ import (
 func TestScan(t *testing.T) {
 	dstate := NewDirState(test_data, nil)
 	// delete unstable files from dstate
-	delete(dstate.FileStates, "test-data/random.data")
-	delete(dstate.FileStates, "test-data/random.data.extracted")
-	delete(dstate.FileStates, "test-data/bloom.gob")
-	delete(dstate.FileStates, "test-data/indexes.bolt")
+	delete(dstate.FileStates, "random.data")
+	delete(dstate.FileStates, "random.data.extracted")
 
 	res := fmt.Sprintf("%x", dstate.Checksum())
-	expected := "897c6ade799edcfb9939c58ec4dbd96f"
+	expected := "b1c49f719c0b89e50a9a5a2fa1e3efeb"
 	if res != expected {
 		t.Errorf("Checksum mismatch", res, expected)
 	}
