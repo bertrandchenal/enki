@@ -173,6 +173,8 @@ func (self *DirState) RestorePrev(backend Backend) {
 		abspath := path.Join(self.root, relpath)
 
 		if state.Status == DELETED_FILE {
+			dir := filepath.Dir(abspath)
+			err = os.MkdirAll(dir, 0777)
 			fd, err = os.Create(abspath)
 		} else {
 			fd, err = os.Open(abspath)
