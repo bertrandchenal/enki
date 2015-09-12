@@ -8,7 +8,6 @@ import (
 
 const (
 	StrongHashSize = md5.Size
-	BlockSize = 1024 * 64
 	M         = 1 << 16
 )
 
@@ -21,18 +20,18 @@ type Blob struct {
 
 
 
-func (self *Blob) BuildSignature(fd io.Reader) (sgn *Signature, err error) {
+func (self *Blob) BuildSignature(fd io.Reader, blocksize int64) (sgn *Signature, err error) {
 	var aweak, bweak, weak, oldWeak WeakHash
 	var readSize, partialReadSize, blockOffset, lastMatch int64
 	var isRolling, matchFound, eofReached bool
 	var data []byte
 	oldBlock := Block{}
 	newBlock := Block{}
-	fullBlock := Block(make([]byte, BlockSize))
+	fullBlock := Block(make([]byte, blocksize))
 	sgn = &Signature{}
 
 	// Read first block
-	data = make([]byte, BlockSize)
+	data = make([]byte, blocksize)
 	prs, err := io.ReadFull(fd, data)
 	partialReadSize = int64(prs)
 	if err != nil {
@@ -45,11 +44,11 @@ func (self *Blob) BuildSignature(fd io.Reader) (sgn *Signature, err error) {
 			panic(err)
 		}
 	}
-	readSize = BlockSize
+	readSize = blocksize
 	oldBlock = Block(data[:])
 
 	// Read second block
-	data = make([]byte, BlockSize)
+	data = make([]byte, blocksize)
 	prs, err = io.ReadFull(fd, data)
 	partialReadSize = int64(prs)
 	if err != nil {
@@ -67,7 +66,7 @@ func (self *Blob) BuildSignature(fd io.Reader) (sgn *Signature, err error) {
 			panic(err)
 		}
 	}
-	readSize += BlockSize
+	readSize += blocksize
 	newBlock = Block(data[:])
 	isRolling = false
 	for {
@@ -93,13 +92,13 @@ func (self *Blob) BuildSignature(fd io.Reader) (sgn *Signature, err error) {
 			}
 
 			// Last read was too short
-			if partialReadSize < BlockSize {
+			if partialReadSize < blocksize {
 				sgn.AddData(newBlock[blockOffset:partialReadSize])
 				return sgn, nil
 			}
 
 			// Read data
-			data = make([]byte, BlockSize)
+			data = make([]byte, blocksize)
 			prs, err := io.ReadFull(fd, data)
 			partialReadSize = int64(prs)
 			if err != io.EOF && err != io.ErrUnexpectedEOF{
@@ -135,7 +134,7 @@ func (self *Blob) BuildSignature(fd io.Reader) (sgn *Signature, err error) {
 			pushHash := WeakHash(newBlock[blockOffset])
 			popHash := WeakHash(oldBlock[blockOffset])
 			aweak = (aweak - popHash + pushHash) % M
-			bweak = (bweak - (WeakHash(BlockSize) * popHash) + aweak) % M
+			bweak = (bweak - (WeakHash(blocksize) * popHash) + aweak) % M
 			weak = aweak + (M * bweak)
 			blockOffset += 1
 		}
@@ -165,8 +164,17 @@ func (self *Blob) Restore(checksum []byte, w io.Writer) (nb_bytes int){
 	return 0 // USEFULL ?
 }
 
-func (self *Blob) Snapshot(checksum []byte, fd io.Reader) {
-	sgn, err := self.BuildSignature(fd)
+func (self *Blob) Snapshot(checksum []byte, fd io.Reader, size int64) {
+	_8k := int64(8 * 1024)
+	_64k := 8 * _8k
+	_512k := 8 * _64k
+
+	blocksize := _64k
+	if size > 0 && size < 4 * _512k {
+		blocksize = _8k
+	}
+
+	sgn, err := self.BuildSignature(fd, blocksize)
 	check(err)
 	self.backend.WriteSignature(checksum, sgn)
 }

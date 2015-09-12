@@ -158,7 +158,9 @@ func checkSignature(backend Backend, blob *Blob) {
 	for _, tf := range testFiles {
 		fd, err := os.Open(tf.name)
 		check(err)
-		sgn, err := blob.BuildSignature(fd)
+		info, err := fd.Stat()
+		check(err)
+		sgn, err := blob.BuildSignature(fd, info.Size())
 		check(err)
 		fd.Close()
 

@@ -31,8 +31,6 @@ func getBackend(c *cli.Context) enki.Backend {
 	dotDir := path.Join(c.GlobalString("root"), dotEnki)
 	info, err := os.Stat(dotDir)
 
-
-
 	if err == nil {
 		if !info.IsDir() {
 			log.Print("Abort, unexpected file ", dotDir)

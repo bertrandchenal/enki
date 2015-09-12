@@ -97,32 +97,50 @@ func (self *BoltBackend) Abort() {
 
 func (self *BoltBackend) AddBlock(weak WeakHash, strong *StrongHash, data Block) {
 	value := self.strongBucket.Get(strong[:])
-	if value == nil {
-		info, err := self.blockFile.Stat()
-		check(err)
-		position := make([]byte, 8)
-		binary.PutVarint(position, info.Size())
-		self.strongBucket.Put(strong[:], position)
-		self.blockFile.Seek(0, 2)
-		_, err = self.blockFile.Write(data)
-		check(err)
-		self.bloomFilter.Add(weak)
+	if value != nil {
+		// Block already known, nothing to do
+		return
 	}
+	info, err := self.blockFile.Stat()
+	check(err)
+	position := make([]byte, 8)
+	binary.LittleEndian.PutUint64(position, uint64(info.Size()))
+	self.strongBucket.Put(strong[:], position)
+	self.blockFile.Seek(0, 2)
+
+	// Write block size
+	block_size := make([]byte, 4)
+	binary.LittleEndian.PutUint32(block_size, uint32(len(data)))
+	_, err = self.blockFile.Write(block_size)
+	check(err)
+	// Write block
+	_, err = self.blockFile.Write(data)
+	check(err)
+
+	// Update bloom filter
+	self.bloomFilter.Add(weak)
 }
 
 func (self *BoltBackend) ReadStrong(strong *StrongHash) Block {
+	// Seek to the position stored in strongbucket
 	bpos := self.strongBucket.Get(strong[:])
 	if bpos == nil {
 		return nil
 	}
-	position, status := binary.Varint(bpos)
-	if (status <= 0) {
-		panic("Integer conversion error")
-	}
-	self.blockFile.Seek(position, 0)
-	value := make([]byte, BlockSize)
+	position := binary.LittleEndian.Uint64(bpos)
+	self.blockFile.Seek(int64(position), 0)
+
+	// The first 4 bytes encode the size of the following block
+	value := make([]byte, 4)
 	_, err := self.blockFile.Read(value)
 	check(err)
+	size := binary.LittleEndian.Uint32(value)
+
+	// Read the actual data
+	value = make([]byte, size)
+	_, err = self.blockFile.Read(value)
+	check(err)
+
 	return value
 }
 
@@ -170,6 +188,7 @@ func (self *BoltBackend) ReadState(timestamp int64) *DirState {
 }
 
 func (self *BoltBackend) WriteState(state *DirState) {
+	// Key is encoded with big endianess to preserve ordering
 	key := make([]byte, 8)
 	binary.BigEndian.PutUint64(key, uint64(state.Timestamp))
 	data := state.GobEncode()

@@ -140,8 +140,11 @@ func (self *DirState) Snapshot(backend Backend) {
 		fd, err := os.Open(abspath)
 		check(err)
 		defer fd.Close()
+
 		log.Print("Add ", relpath)
-		blob.Snapshot(state.Checksum, fd)
+		info, err := fd.Stat()
+		check(err)
+		blob.Snapshot(state.Checksum, fd, info.Size())
 		snapped = true
 	}
 	if snapped {
