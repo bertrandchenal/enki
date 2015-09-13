@@ -170,7 +170,7 @@ func (self *Blob) Snapshot(checksum []byte, fd io.Reader, size int64) {
 	_512k := 8 * _64k
 
 	blocksize := _64k
-	if size > 0 && size < 4 * _512k {
+	if size > 0 && size < _512k {
 		blocksize = _8k
 	}
 
