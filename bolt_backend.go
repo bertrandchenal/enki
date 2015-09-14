@@ -1,6 +1,7 @@
 package enki
 
 import (
+	"compress/gzip"
 	"bytes"
 	"encoding/binary"
 	"github.com/boltdb/bolt"
@@ -201,9 +202,9 @@ func CreateFile(dir string, name string) *os.File {
 }
 
 func WriteIndex(bucket *bolt.Bucket, file *os.File, key []byte, data []byte) {
-	// Write the size of data and data at the end of file. Take the
-	// offset of data in the file and put it in the bucket under the
-	// given key
+	// Write the size of (gzipped) data and (gzipped) data  at the end of
+	// file. Take the offset of data in the file and put it in the
+	// bucket under the given key
 
 	// Find position and update bucket
 	info, err := file.Stat()
@@ -213,15 +214,17 @@ func WriteIndex(bucket *bolt.Bucket, file *os.File, key []byte, data []byte) {
 	bucket.Put(key, position)
 	file.Seek(0, 2)
 
-	// Write block size
-	block_size := make([]byte, 4)
-	binary.LittleEndian.PutUint32(block_size, uint32(len(data)))
-	_, err = file.Write(block_size)
-	check(err)
-	// Write block
-	_, err = file.Write(data)
+	// Write data size
+	data_size := make([]byte, 4)
+	binary.LittleEndian.PutUint32(data_size, uint32(len(data)))
+	_, err = file.Write(data_size)
 	check(err)
 
+	// Zip+Write data
+	zip_writer := gzip.NewWriter(file)
+	_, err = zip_writer.Write(data)
+	zip_writer.Close()
+	check(err)
 }
 
 func ReadIndex(bucket *bolt.Bucket, file *os.File, key []byte) []byte {
@@ -239,10 +242,10 @@ func ReadIndex(bucket *bolt.Bucket, file *os.File, key []byte) []byte {
 	check(err)
 	size := binary.LittleEndian.Uint32(value)
 
-	// Read the actual data
 	data := make([]byte, size)
-	_, err = file.Read(data)
+	zip_reader, err := gzip.NewReader(file)
 	check(err)
-
+	_, err = zip_reader.Read(data)
+	check(err)
 	return data
 }
