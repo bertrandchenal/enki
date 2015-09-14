@@ -20,6 +20,7 @@ const NBFUNC = uint(10)
 type BoltBackend struct {
 	bloomFilter *Bloom
 	blockFile *os.File
+	sigFile *os.File
 	db *bolt.DB
 	dotDir *string
 	signatureBucket *bolt.Bucket
@@ -41,15 +42,8 @@ func NewBoltBackend(dotDir string) Backend {
 	}
 
 	// Create file containing blocks
-	var blockFile *os.File
-	var err error
-	blockPath := path.Join(dotDir, "blocks.blob")
-	if _, err = os.Stat(blockPath); err == nil {
-		blockFile, err = os.OpenFile(blockPath, os.O_RDWR|os.O_APPEND, 0660)
-	} else {
-		blockFile, err = os.Create(blockPath)
-	}
-	check(err)
+	var blockFile = CreateFile(dotDir, "blocks.blob")
+	var sigFile = CreateFile(dotDir, "sigs.blob")
 
 	// Create db
 	dbPath := path.Join(dotDir, "indexes.bolt")
@@ -69,6 +63,7 @@ func NewBoltBackend(dotDir string) Backend {
 	backend := &BoltBackend{
 		bloomFilter,
 		blockFile,
+		sigFile,
 		db,
 		&dotDir,
 		signatureBucket,
@@ -101,46 +96,15 @@ func (self *BoltBackend) AddBlock(weak WeakHash, strong *StrongHash, data Block)
 		// Block already known, nothing to do
 		return
 	}
-	info, err := self.blockFile.Stat()
-	check(err)
-	position := make([]byte, 8)
-	binary.LittleEndian.PutUint64(position, uint64(info.Size()))
-	self.strongBucket.Put(strong[:], position)
-	self.blockFile.Seek(0, 2)
 
-	// Write block size
-	block_size := make([]byte, 4)
-	binary.LittleEndian.PutUint32(block_size, uint32(len(data)))
-	_, err = self.blockFile.Write(block_size)
-	check(err)
-	// Write block
-	_, err = self.blockFile.Write(data)
-	check(err)
+	WriteIndex(self.strongBucket, self.blockFile, strong[:], data)
 
 	// Update bloom filter
 	self.bloomFilter.Add(weak)
 }
 
 func (self *BoltBackend) ReadStrong(strong *StrongHash) Block {
-	// Seek to the position stored in strongbucket
-	bpos := self.strongBucket.Get(strong[:])
-	if bpos == nil {
-		return nil
-	}
-	position := binary.LittleEndian.Uint64(bpos)
-	self.blockFile.Seek(int64(position), 0)
-
-	// The first 4 bytes encode the size of the following block
-	value := make([]byte, 4)
-	_, err := self.blockFile.Read(value)
-	check(err)
-	size := binary.LittleEndian.Uint32(value)
-
-	// Read the actual data
-	value = make([]byte, size)
-	_, err = self.blockFile.Read(value)
-	check(err)
-
+	value := ReadIndex(self.strongBucket, self.blockFile, strong[:])
 	return value
 }
 
@@ -150,7 +114,7 @@ func (self *BoltBackend) SearchWeak(weak WeakHash) bool {
 
 func (self *BoltBackend) ReadSignature(checksum []byte) *Signature {
 	sgn := &Signature{}
-	data := self.signatureBucket.Get(checksum)
+	data := ReadIndex(self.signatureBucket, self.sigFile, checksum)
 	if data == nil {
 		return nil
 	}
@@ -162,7 +126,7 @@ func (self *BoltBackend) ReadSignature(checksum []byte) *Signature {
 func (self *BoltBackend) WriteSignature(checksum []byte, sgn *Signature) {
 	data, err := sgn.GobEncode()
 	check(err)
-	self.signatureBucket.Put(checksum, data)
+	WriteIndex(self.signatureBucket, self.sigFile, checksum, data)
 }
 
 func (self *BoltBackend) ReadState(timestamp int64) *DirState {
@@ -224,4 +188,65 @@ func (self *Bloom) GobDecode(data []byte) (error) {
 
 func (self *Bloom) GobEncode() ([]byte, error) {
 	return self.bf.GobEncode()
+}
+
+func CreateFile(dir string, name string) (*os.File) {
+	var err error
+	var file *os.File
+	filePath := path.Join(dir, name)
+	if _, err = os.Stat(filePath); err == nil {
+		file, err = os.OpenFile(filePath, os.O_RDWR|os.O_APPEND, 0660)
+	} else {
+		file, err = os.Create(filePath)
+	}
+	check(err)
+	return file
+}
+
+func WriteIndex(bucket *bolt.Bucket, file *os.File, key []byte, data []byte) {
+	// Write the size of data and data at the end of file. Take the
+	// offset of data in the file and put it in the bucket under the
+	// given key
+
+	// Find position and update bucket
+	info, err := file.Stat()
+	check(err)
+	position := make([]byte, 8)
+	binary.LittleEndian.PutUint64(position, uint64(info.Size()))
+	bucket.Put(key, position)
+	file.Seek(0, 2)
+
+	// Write block size
+	block_size := make([]byte, 4)
+	binary.LittleEndian.PutUint32(block_size, uint32(len(data)))
+	_, err = file.Write(block_size)
+	check(err)
+	// Write block
+	_, err = file.Write(data)
+	check(err)
+
+}
+
+
+func ReadIndex(bucket *bolt.Bucket, file *os.File, key []byte) ([]byte) {
+	// Seek to the position stored in strongbucket
+	bpos := bucket.Get(key)
+	if bpos == nil {
+		return nil
+	}
+	position := binary.LittleEndian.Uint64(bpos)
+	file.Seek(int64(position), 0)
+
+	// The first 4 bytes encode the size of the following block
+	value := make([]byte, 4)
+	_, err := file.Read(value)
+	check(err)
+	size := binary.LittleEndian.Uint32(value)
+
+	// Read the actual data
+	data := make([]byte, size)
+	_, err = file.Read(data)
+	check(err)
+
+	return data
 }
