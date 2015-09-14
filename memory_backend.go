@@ -1,12 +1,11 @@
 package enki
 
-
 type MemoryBackend struct {
-	BlockMap map[StrongHash]Block
-	WeakMap map[WeakHash]bool
+	BlockMap     map[StrongHash]Block
+	WeakMap      map[WeakHash]bool
 	SignatureMap map[string]*Signature
-	StateMap map[int64]*DirState
-	bloomFilter *Bloom
+	StateMap     map[int64]*DirState
+	bloomFilter  *Bloom
 }
 
 func NewMemoryBackend() Backend {

@@ -4,31 +4,29 @@ import (
 	"bytes"
 	"encoding/binary"
 	"github.com/boltdb/bolt"
+	willfbloom "github.com/willf/bloom"
 	"io/ioutil"
 	"os"
 	"path"
-	willfbloom "github.com/willf/bloom"
 )
-
 
 // 14MB is the optimal size for 1MB of entries with false positive
 // rate of 0.001 (and 10 is the optimal number of functions) 1MB
 // of entries referring to block of 64KB is equivalent to 512GB
-const BLOOMSIZE = uint(14*2<<22)
+const BLOOMSIZE = uint(14 * 2 << 22)
 const NBFUNC = uint(10)
 
 type BoltBackend struct {
-	bloomFilter *Bloom
-	blockFile *os.File
-	sigFile *os.File
-	db *bolt.DB
-	dotDir *string
+	bloomFilter     *Bloom
+	blockFile       *os.File
+	sigFile         *os.File
+	db              *bolt.DB
+	dotDir          *string
 	signatureBucket *bolt.Bucket
-	stateBucket *bolt.Bucket
-	strongBucket *bolt.Bucket
-	tx *bolt.Tx
+	stateBucket     *bolt.Bucket
+	strongBucket    *bolt.Bucket
+	tx              *bolt.Tx
 }
-
 
 func NewBoltBackend(dotDir string) Backend {
 	// Create bloom
@@ -47,7 +45,7 @@ func NewBoltBackend(dotDir string) Backend {
 
 	// Create db
 	dbPath := path.Join(dotDir, "indexes.bolt")
-    db, err := bolt.Open(dbPath, 0600, nil)
+	db, err := bolt.Open(dbPath, 0600, nil)
 	check(err)
 
 	// Create buckets
@@ -132,7 +130,7 @@ func (self *BoltBackend) WriteSignature(checksum []byte, sgn *Signature) {
 func (self *BoltBackend) ReadState(timestamp int64) *DirState {
 	var data []byte
 	var foundkey []byte
-    cursor := self.stateBucket.Cursor()
+	cursor := self.stateBucket.Cursor()
 	if timestamp == MAXTIMESTAMP {
 		_, data = cursor.Last()
 	} else {
@@ -159,7 +157,6 @@ func (self *BoltBackend) WriteState(state *DirState) {
 	self.stateBucket.Put(key, data)
 }
 
-
 type Bloom struct {
 	bf *willfbloom.BloomFilter
 }
@@ -182,7 +179,7 @@ func NewBloom() *Bloom {
 	return bloom
 }
 
-func (self *Bloom) GobDecode(data []byte) (error) {
+func (self *Bloom) GobDecode(data []byte) error {
 	return self.bf.GobDecode(data)
 }
 
@@ -190,7 +187,7 @@ func (self *Bloom) GobEncode() ([]byte, error) {
 	return self.bf.GobEncode()
 }
 
-func CreateFile(dir string, name string) (*os.File) {
+func CreateFile(dir string, name string) *os.File {
 	var err error
 	var file *os.File
 	filePath := path.Join(dir, name)
@@ -227,8 +224,7 @@ func WriteIndex(bucket *bolt.Bucket, file *os.File, key []byte, data []byte) {
 
 }
 
-
-func ReadIndex(bucket *bolt.Bucket, file *os.File, key []byte) ([]byte) {
+func ReadIndex(bucket *bolt.Bucket, file *os.File, key []byte) []byte {
 	// Seek to the position stored in strongbucket
 	bpos := bucket.Get(key)
 	if bpos == nil {

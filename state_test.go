@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-
 func TestScan(t *testing.T) {
 	dstate := NewDirState(test_data, nil)
 	// delete unstable files from dstate
@@ -20,7 +19,7 @@ func TestScan(t *testing.T) {
 	}
 }
 
-func TestGob (t *testing.T) {
+func TestGob(t *testing.T) {
 	dstate := NewDirState(test_data, nil)
 	dstatecopy := &DirState{}
 	dstatecopy.GobDecode(dstate.GobEncode())
@@ -29,7 +28,7 @@ func TestGob (t *testing.T) {
 		if fs.Timestamp != fscopy.Timestamp {
 			t.Errorf("Filestate mismatch", fs, fscopy)
 		}
-		if ! bytes.Equal(fs.Checksum, fscopy.Checksum) {
+		if !bytes.Equal(fs.Checksum, fscopy.Checksum) {
 			t.Errorf("Filestate mismatch", fs, fscopy)
 		}
 	}

@@ -2,13 +2,13 @@ package enki
 
 import (
 	"bytes"
-	"io"
 	"crypto/md5"
+	"io"
 )
 
 const (
 	StrongHashSize = md5.Size
-	M         = 1 << 16
+	M              = 1 << 16
 )
 
 type Block []byte
@@ -17,8 +17,6 @@ type WeakHash uint32
 type Blob struct {
 	backend Backend
 }
-
-
 
 func (self *Blob) BuildSignature(fd io.Reader, blocksize int64) (sgn *Signature, err error) {
 	var aweak, bweak, weak, oldWeak WeakHash
@@ -101,7 +99,7 @@ func (self *Blob) BuildSignature(fd io.Reader, blocksize int64) (sgn *Signature,
 			data = make([]byte, blocksize)
 			prs, err := io.ReadFull(fd, data)
 			partialReadSize = int64(prs)
-			if err != io.EOF && err != io.ErrUnexpectedEOF{
+			if err != io.EOF && err != io.ErrUnexpectedEOF {
 				check(err)
 			} else {
 				eofReached = true
@@ -155,7 +153,7 @@ func (self *Blob) BuildSignature(fd io.Reader, blocksize int64) (sgn *Signature,
 
 }
 
-func (self *Blob) Restore(checksum []byte, w io.Writer) (nb_bytes int){
+func (self *Blob) Restore(checksum []byte, w io.Writer) (nb_bytes int) {
 	sgn := self.backend.ReadSignature(checksum)
 	if sgn == nil {
 		return 0
@@ -178,6 +176,7 @@ func (self *Blob) Snapshot(checksum []byte, fd io.Reader, size int64) {
 	check(err)
 	self.backend.WriteSignature(checksum, sgn)
 }
+
 // Returns a strong hash for a given block of data
 func GetStrongHash(v Block) *StrongHash {
 	res := StrongHash(md5.Sum(v))
@@ -189,7 +188,7 @@ func GetWeakHash(v Block) (WeakHash, WeakHash, WeakHash) {
 	var a, b WeakHash
 	for i := range v {
 		a += WeakHash(v[i])
-		b += WeakHash(len(v) - i) * WeakHash(v[i])
+		b += WeakHash(len(v)-i) * WeakHash(v[i])
 	}
 	a = a % M
 	b = b % M
@@ -206,6 +205,6 @@ func min(a, b int) int {
 }
 
 // Concat variadic arguments
-func concat(s...[]byte) []byte {
+func concat(s ...[]byte) []byte {
 	return bytes.Join(s, []byte(""))
 }

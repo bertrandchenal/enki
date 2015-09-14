@@ -5,7 +5,6 @@ import (
 	"fmt"
 )
 
-
 func ExampleIntToBytes() {
 	timestamps := []int64{1432808440, 1432808442, 1432808454}
 

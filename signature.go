@@ -12,16 +12,15 @@ const (
 )
 
 type Segment struct {
-	Mode int
-	Weakhash WeakHash
+	Mode       int
+	Weakhash   WeakHash
 	Stronghash *StrongHash
-	Data []byte
+	Data       []byte
 }
 
 type Signature struct {
 	Segments []Segment
 }
-
 
 func (self *Signature) AddData(data []byte) {
 	segment := Segment{
@@ -33,8 +32,8 @@ func (self *Signature) AddData(data []byte) {
 
 func (self *Signature) AddHash(weak WeakHash, strong *StrongHash) {
 	segment := Segment{
-		Mode: HASH_SGM,
-		Weakhash: weak,
+		Mode:       HASH_SGM,
+		Weakhash:   weak,
 		Stronghash: strong,
 	}
 	self.Segments = append(self.Segments, segment)
@@ -56,16 +55,16 @@ func (self *Signature) Extract(backend Backend, w io.Writer) {
 
 func (self *Signature) GobDecode(data []byte) error {
 	buf := bytes.NewBuffer(data)
-    d := gob.NewDecoder(buf)
-    err := d.Decode(&self.Segments)
+	d := gob.NewDecoder(buf)
+	err := d.Decode(&self.Segments)
 	return err
 }
 
 func (self *Signature) GobEncode() ([]byte, error) {
 	var buf bytes.Buffer
-    e := gob.NewEncoder(&buf)
+	e := gob.NewEncoder(&buf)
 
 	// Encoding the map
-    err := e.Encode(self.Segments) //FIXME fail if file is empty
+	err := e.Encode(self.Segments) //FIXME fail if file is empty
 	return buf.Bytes(), err
 }

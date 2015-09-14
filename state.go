@@ -15,23 +15,23 @@ import (
 
 const (
 	MAXTIMESTAMP = 1<<63 - 1
-	NEW_FILE = iota
+	NEW_FILE     = iota
 	CHANGED_FILE = iota
 	DELETED_FILE = iota
 )
 
 type FileState struct {
 	Timestamp int64
-	Checksum []byte
-	Status int
+	Checksum  []byte
+	Status    int
 }
 
 type DirState struct {
-	Timestamp int64
+	Timestamp  int64
 	FileStates map[string]FileState
-	backend Backend
-	prevState *DirState
-	root string
+	backend    Backend
+	prevState  *DirState
+	root       string
 }
 
 func NewDirState(path string, prevState *DirState) *DirState {
@@ -43,10 +43,10 @@ func NewDirState(path string, prevState *DirState) *DirState {
 	}
 
 	state := &DirState{
-		Timestamp: time.Now().Unix(),
+		Timestamp:  time.Now().Unix(),
 		FileStates: fstates,
-		prevState: prevState,
-		root: path,
+		prevState:  prevState,
+		root:       path,
 	}
 
 	err := filepath.Walk(path, state.append)
@@ -55,7 +55,6 @@ func NewDirState(path string, prevState *DirState) *DirState {
 	state.detect_deletion()
 	return state
 }
-
 
 func (self *DirState) append(path string, info os.FileInfo, err error) error {
 	dotName := info.Name() != "." && filepath.HasPrefix(info.Name(), ".")
@@ -98,8 +97,7 @@ func (self *DirState) append(path string, info os.FileInfo, err error) error {
 		self.FileStates[relpath] = newState
 	}
 	return nil
-} 
-
+}
 
 func (self *DirState) Checksum() []byte {
 	checksum := md5.New()

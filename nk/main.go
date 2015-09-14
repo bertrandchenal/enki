@@ -137,7 +137,6 @@ func createSnapshot(c *cli.Context) {
 	backend := getBackend(c)
 	defer backend.Close()
 
-
 	prevState := enki.LastState(backend)
 	currentState := enki.NewDirState(root, prevState)
 

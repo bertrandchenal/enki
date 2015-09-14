@@ -3,25 +3,26 @@ package enki
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"testing"
- 	"encoding/hex"
 )
 
 type TestFile struct {
-	nbCopy int
-	name string
+	nbCopy  int
+	name    string
 	shifted bool
-	random bool
+	random  bool
 }
 
 var memoryBackend, boltBackend Backend
 var testFiles []TestFile
 var memoryBlob *Blob
 var boltBlob *Blob
+
 const test_data = "test-data"
 
 func TestChecksum(t *testing.T) {
@@ -37,11 +38,10 @@ func TestChecksum(t *testing.T) {
 	}
 }
 
-
 func TestWeakHash(t *testing.T) {
 	var weak, aweak, bweak WeakHash
 	var i uint32
-	content := []byte{8, 0, 1, 2, 5, 6, 7, 9, 3, 4,}
+	content := []byte{8, 0, 1, 2, 5, 6, 7, 9, 3, 4}
 	winSize := uint32(len(content))
 
 	// Init values
@@ -51,8 +51,8 @@ func TestWeakHash(t *testing.T) {
 	// Roll, with noise in the middle
 	twice := concat(content, content[0:3], content)
 	max_len := uint32(len(twice))
-	for i = 0; i < max_len - winSize; i++ {
-		pushHash := WeakHash(twice[i + winSize])
+	for i = 0; i < max_len-winSize; i++ {
+		pushHash := WeakHash(twice[i+winSize])
 		popHash := WeakHash(twice[i])
 		aweak = (aweak - popHash + pushHash) % M
 		bweak = (bweak - (WeakHash(winSize) * popHash) + aweak) % M
@@ -73,8 +73,8 @@ func TestWeakHash(t *testing.T) {
 	zeroes := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	twice = concat(zeroes, content)
 	max_len = uint32(len(twice))
-	for i = 0; i < max_len - winSize; i++ {
-		pushHash := WeakHash(twice[i + winSize])
+	for i = 0; i < max_len-winSize; i++ {
+		pushHash := WeakHash(twice[i+winSize])
 		popHash := WeakHash(twice[i])
 		aweak = (aweak - popHash + pushHash) % M
 		bweak = (bweak - (WeakHash(winSize) * popHash) + aweak) % M
@@ -122,7 +122,6 @@ func TestConcat(t *testing.T) {
 
 }
 
-
 func initFile(testFile *TestFile) {
 	fd, err := os.Create(testFile.name)
 	check(err)
@@ -130,7 +129,7 @@ func initFile(testFile *TestFile) {
 	if testFile.random {
 		src := rand.Reader
 		check(err)
-		io.CopyN(fd, src, 1024 * int64(testFile.nbCopy))
+		io.CopyN(fd, src, 1024*int64(testFile.nbCopy))
 		fd.Close()
 		return
 	}
@@ -175,7 +174,7 @@ func checkSignature(backend Backend, blob *Blob) {
 
 		checksum, err := GetChecksum(extracted_path)
 		check(err)
-		if (bytes.Compare(expected, checksum) != 0) {
+		if bytes.Compare(expected, checksum) != 0 {
 			panic("Wrong checksum!")
 		}
 	}
