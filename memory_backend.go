@@ -5,12 +5,12 @@ type MemoryBackend struct {
 	WeakMap      map[WeakHash]bool
 	SignatureMap map[string]*Signature
 	StateMap     map[int64]*DirState
-	bloomFilter  *Bloom
+	weakMap         map[WeakHash]bool
 }
 
 func NewMemoryBackend() Backend {
 	backend := &MemoryBackend{}
-	backend.bloomFilter = NewBloom()
+	backend.weakMap = make(map[WeakHash]bool)
 	backend.BlockMap = make(map[StrongHash]Block)
 	backend.WeakMap = make(map[WeakHash]bool)
 	backend.SignatureMap = make(map[string]*Signature)
@@ -21,7 +21,6 @@ func NewMemoryBackend() Backend {
 func (self *MemoryBackend) AddBlock(weak WeakHash, strong *StrongHash, data Block) {
 	_, present := self.BlockMap[*strong]
 	if !present {
-		self.bloomFilter.Add(weak)
 		self.WeakMap[weak] = true
 		self.BlockMap[*strong] = data
 	}
@@ -36,10 +35,7 @@ func (self *MemoryBackend) ReadStrong(strong *StrongHash) Block {
 }
 
 func (self *MemoryBackend) SearchWeak(weak WeakHash) bool {
-	if self.bloomFilter.Test(weak) {
-		return self.WeakMap[weak]
-	}
-	return false
+	return self.weakMap[weak]
 }
 
 func (self *MemoryBackend) ReadSignature(checksum []byte) *Signature {

@@ -4,9 +4,8 @@ import (
 	"compress/gzip"
 	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"github.com/boltdb/bolt"
-	willfbloom "github.com/willf/bloom"
-	"io/ioutil"
 	"os"
 	"path"
 )
@@ -14,11 +13,9 @@ import (
 // 14MB is the optimal size for 1MB of entries with false positive
 // rate of 0.001 (and 10 is the optimal number of functions) 1MB
 // of entries referring to block of 64KB is equivalent to 512GB
-const BLOOMSIZE = uint(14 * 2 << 22)
-const NBFUNC = uint(10)
 
 type BoltBackend struct {
-	bloomFilter     *Bloom
+	weakMap         map[WeakHash]bool
 	blockFile       *os.File
 	sigFile         *os.File
 	db              *bolt.DB
@@ -30,14 +27,14 @@ type BoltBackend struct {
 }
 
 func NewBoltBackend(dotDir string) Backend {
-	// Create bloom
-	bloomFilter := NewBloom()
-	bloomPath := path.Join(dotDir, "bloom.gob")
-	if _, err := os.Stat(bloomPath); err == nil {
-		bloomData, err := ioutil.ReadFile(bloomPath)
-		check(err)
-		err = bloomFilter.GobDecode(bloomData)
-		check(err)
+	// Create weakMap
+	weakMap := make(map[WeakHash]bool)
+	mapPath := path.Join(dotDir, "weakmap.gob")
+	if fd, err := os.Open(mapPath); err == nil {
+		dec := gob.NewDecoder(fd)
+		if err := dec.Decode(&weakMap); err != nil {
+			check(err)
+		}
 	}
 
 	// Create file containing blocks
@@ -60,7 +57,7 @@ func NewBoltBackend(dotDir string) Backend {
 	check(err)
 
 	backend := &BoltBackend{
-		bloomFilter,
+		weakMap,
 		blockFile,
 		sigFile,
 		db,
@@ -76,12 +73,12 @@ func NewBoltBackend(dotDir string) Backend {
 func (self *BoltBackend) Close() {
 	check(self.tx.Commit())
 	check(self.db.Close())
-	bloomPath := path.Join(*self.dotDir, "bloom.gob")
-	fd, err := os.Create(bloomPath)
+	mapPath := path.Join(*self.dotDir, "weakmap.gob")
+	fd, err := os.Create(mapPath)
 	check(err)
-	data, err := self.bloomFilter.GobEncode()
-	fd.Write(data)
-	fd.Close()
+	defer fd.Close()
+	enc := gob.NewEncoder(fd)
+	check(enc.Encode(self.weakMap))
 	self.blockFile.Close()
 }
 
@@ -98,8 +95,8 @@ func (self *BoltBackend) AddBlock(weak WeakHash, strong *StrongHash, data Block)
 
 	WriteIndex(self.strongBucket, self.blockFile, strong[:], data)
 
-	// Update bloom filter
-	self.bloomFilter.Add(weak)
+	// Update map
+	self.weakMap[weak] = true
 }
 
 func (self *BoltBackend) ReadStrong(strong *StrongHash) Block {
@@ -108,7 +105,7 @@ func (self *BoltBackend) ReadStrong(strong *StrongHash) Block {
 }
 
 func (self *BoltBackend) SearchWeak(weak WeakHash) bool {
-	return self.bloomFilter.Test(weak)
+	return self.weakMap[weak]
 }
 
 func (self *BoltBackend) ReadSignature(checksum []byte) *Signature {
@@ -158,35 +155,6 @@ func (self *BoltBackend) WriteState(state *DirState) {
 	self.stateBucket.Put(key, data)
 }
 
-type Bloom struct {
-	bf *willfbloom.BloomFilter
-}
-
-func (self *Bloom) Add(weak WeakHash) {
-	weakb := make([]byte, 4)
-	binary.LittleEndian.PutUint32(weakb, uint32(weak))
-	self.bf.Add(weakb)
-}
-
-func (self *Bloom) Test(weak WeakHash) bool {
-	weakb := make([]byte, 4)
-	binary.LittleEndian.PutUint32(weakb, uint32(weak))
-	return self.bf.Test(weakb)
-}
-
-func NewBloom() *Bloom {
-	bloom := &Bloom{}
-	bloom.bf = willfbloom.New(BLOOMSIZE, NBFUNC)
-	return bloom
-}
-
-func (self *Bloom) GobDecode(data []byte) error {
-	return self.bf.GobDecode(data)
-}
-
-func (self *Bloom) GobEncode() ([]byte, error) {
-	return self.bf.GobEncode()
-}
 
 func CreateFile(dir string, name string) *os.File {
 	var err error
