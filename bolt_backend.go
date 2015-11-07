@@ -1,7 +1,7 @@
 package enki
 
 import (
-	"compress/gzip"
+	"compress/lzw"
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
@@ -16,8 +16,8 @@ import (
 
 type BoltBackend struct {
 	weakMap         map[WeakHash]bool
-	blockFile       *os.File
-	sigFile         *os.File
+	blockFile       *BlobFile
+	sigFile         *BlobFile
 	db              *bolt.DB
 	dotDir          *string
 	signatureBucket *bolt.Bucket
@@ -37,10 +37,6 @@ func NewBoltBackend(dotDir string) Backend {
 		}
 	}
 
-	// Create file containing blocks
-	var blockFile = CreateFile(dotDir, "blocks.blob")
-	var sigFile = CreateFile(dotDir, "sigs.blob")
-
 	// Create db
 	dbPath := path.Join(dotDir, "indexes.bolt")
 	db, err := bolt.Open(dbPath, 0600, nil)
@@ -55,6 +51,10 @@ func NewBoltBackend(dotDir string) Backend {
 	check(err)
 	strongBucket, err := tx.CreateBucketIfNotExists([]byte("strong"))
 	check(err)
+
+	// Create blobfiles
+	var blockFile = NewBlobFile(path.Join(dotDir, "blocks.blob"), strongBucket)
+	var sigFile = NewBlobFile(path.Join(dotDir, "sigs.blob"), signatureBucket)
 
 	backend := &BoltBackend{
 		weakMap,
@@ -80,6 +80,7 @@ func (self *BoltBackend) Close() {
 	enc := gob.NewEncoder(fd)
 	check(enc.Encode(self.weakMap))
 	self.blockFile.Close()
+	self.sigFile.Close()
 }
 
 func (self *BoltBackend) Abort() {
@@ -87,21 +88,14 @@ func (self *BoltBackend) Abort() {
 }
 
 func (self *BoltBackend) AddBlock(weak WeakHash, strong *StrongHash, data Block) {
-	value := self.strongBucket.Get(strong[:])
-	if value != nil {
-		// Block already known, nothing to do
-		return
-	}
-
-	WriteIndex(self.strongBucket, self.blockFile, strong[:], data)
-
+	// Store block
+	self.blockFile.Write(strong[:], data)
 	// Update map
 	self.weakMap[weak] = true
 }
 
 func (self *BoltBackend) ReadStrong(strong *StrongHash) Block {
-	value := ReadIndex(self.strongBucket, self.blockFile, strong[:])
-	return value
+	return self.blockFile.Read(strong[:])
 }
 
 func (self *BoltBackend) SearchWeak(weak WeakHash) bool {
@@ -110,7 +104,7 @@ func (self *BoltBackend) SearchWeak(weak WeakHash) bool {
 
 func (self *BoltBackend) ReadSignature(checksum []byte) *Signature {
 	sgn := &Signature{}
-	data := ReadIndex(self.signatureBucket, self.sigFile, checksum)
+	data := self.sigFile.Read(checksum)
 	if data == nil {
 		return nil
 	}
@@ -122,7 +116,7 @@ func (self *BoltBackend) ReadSignature(checksum []byte) *Signature {
 func (self *BoltBackend) WriteSignature(checksum []byte, sgn *Signature) {
 	data, err := sgn.GobEncode()
 	check(err)
-	WriteIndex(self.signatureBucket, self.sigFile, checksum, data)
+	self.sigFile.Write(checksum, data)
 }
 
 func (self *BoltBackend) ReadState(timestamp int64) *DirState {
@@ -156,64 +150,88 @@ func (self *BoltBackend) WriteState(state *DirState) {
 }
 
 
-func CreateFile(dir string, name string) *os.File {
-	var err error
-	var file *os.File
-	filePath := path.Join(dir, name)
-	if _, err = os.Stat(filePath); err == nil {
-		file, err = os.OpenFile(filePath, os.O_RDWR|os.O_APPEND, 0660)
-	} else {
-		file, err = os.Create(filePath)
-	}
-	check(err)
-	return file
+type BlobFile struct {
+	file *os.File
+	bucket *bolt.Bucket
+	size uint64
 }
 
-func WriteIndex(bucket *bolt.Bucket, file *os.File, key []byte, data []byte) {
-	// Write the size of (gzipped) data and (gzipped) data  at the end of
+func NewBlobFile(filePath string, bucket *bolt.Bucket) *BlobFile {
+	var err error
+	var size uint64
+	var file *os.File
+	if _, err = os.Stat(filePath); err == nil {
+		file, err = os.OpenFile(filePath, os.O_RDWR|os.O_APPEND, 0660)
+		info, err := file.Stat()
+		check(err)
+		size = uint64(info.Size())
+	} else {
+		file, err = os.Create(filePath)
+		size = 0
+	}
+	check(err)
+	return &BlobFile{file, bucket, size}
+}
+
+func (self *BlobFile) Write(key []byte, data []byte) {
+	// Write the size of (zipped) data and (zipped) data  at the end of
 	// file. Take the offset of data in the file and put it in the
 	// bucket under the given key
 
-	// Find position and update bucket
-	info, err := file.Stat()
-	check(err)
+	value := self.bucket.Get(key)
+	if value != nil {
+		// Key already known, nothing to do
+		return
+	}
+
+	// Store future data position (current file size) in bucket
 	position := make([]byte, 8)
-	binary.LittleEndian.PutUint64(position, uint64(info.Size()))
-	bucket.Put(key, position)
-	file.Seek(0, 2)
+	binary.LittleEndian.PutUint64(position, self.size)
+	self.bucket.Put(key, position)
+
+	// Jump to end of the file
+	self.file.Seek(0, 2)
 
 	// Write data size
 	data_size := make([]byte, 4)
 	binary.LittleEndian.PutUint32(data_size, uint32(len(data)))
-	_, err = file.Write(data_size)
+	write_size, err := self.file.Write(data_size)
+	if write_size != 4 {
+		panic("how unexpected it is")
+	}
 	check(err)
+	self.size += uint64(write_size)
 
 	// Zip+Write data
-	zip_writer := gzip.NewWriter(file)
-	_, err = zip_writer.Write(data)
+	zip_writer := lzw.NewWriter(self.file, lzw.LSB, 8)
+	write_size, err = zip_writer.Write(data)
 	zip_writer.Close()
 	check(err)
+	self.size += uint64(write_size)
 }
 
-func ReadIndex(bucket *bolt.Bucket, file *os.File, key []byte) []byte {
-	// Seek to the position stored in strongbucket
-	bpos := bucket.Get(key)
+func (self *BlobFile) Read(key []byte) []byte {
+	// Seek to the position stored in bucket
+	bpos := self.bucket.Get(key)
 	if bpos == nil {
 		return nil
 	}
 	position := binary.LittleEndian.Uint64(bpos)
-	file.Seek(int64(position), 0)
+	self.file.Seek(int64(position), 0)
 
 	// The first 4 bytes encode the size of the following block
 	value := make([]byte, 4)
-	_, err := file.Read(value)
+	_, err := self.file.Read(value)
 	check(err)
-	size := binary.LittleEndian.Uint32(value)
+	dataSize := binary.LittleEndian.Uint32(value)
 
-	data := make([]byte, size)
-	zip_reader, err := gzip.NewReader(file)
-	check(err)
+	data := make([]byte, dataSize)
+	zip_reader := lzw.NewReader(self.file, lzw.LSB, 8)
 	_, err = zip_reader.Read(data)
 	check(err)
 	return data
+}
+
+func (self *BlobFile) Close() {
+	self.file.Close()
 }
