@@ -20,9 +20,7 @@ type BoltBackend struct {
 	sigFile         *BlobFile
 	db              *bolt.DB
 	dotDir          *string
-	signatureBucket *bolt.Bucket
 	stateBucket     *bolt.Bucket
-	strongBucket    *bolt.Bucket
 	tx              *bolt.Tx
 }
 
@@ -62,9 +60,7 @@ func NewBoltBackend(dotDir string) Backend {
 		sigFile,
 		db,
 		&dotDir,
-		signatureBucket,
 		stateBucket,
-		strongBucket,
 		tx,
 	}
 	return backend
@@ -153,25 +149,23 @@ func (self *BoltBackend) WriteState(state *DirState) {
 type BlobFile struct {
 	file *os.File
 	bucket *bolt.Bucket
-	size uint64
 }
 
 func NewBlobFile(filePath string, bucket *bolt.Bucket) *BlobFile {
 	var err error
-	var size uint64
 	var file *os.File
 	if _, err = os.Stat(filePath); err == nil {
 		file, err = os.OpenFile(filePath, os.O_RDWR|os.O_APPEND, 0660)
-		info, err := file.Stat()
 		check(err)
-		size = uint64(info.Size())
 	} else {
 		file, err = os.Create(filePath)
-		size = 0
 	}
 	check(err)
-	return &BlobFile{file, bucket, size}
+
+
+	return &BlobFile{file, bucket}
 }
+
 
 func (self *BlobFile) Write(key []byte, data []byte) {
 	// Write the size of (zipped) data and (zipped) data  at the end of
@@ -186,38 +180,33 @@ func (self *BlobFile) Write(key []byte, data []byte) {
 
 	// Store future data position (current file size) in bucket
 	position := make([]byte, 8)
-	binary.LittleEndian.PutUint64(position, self.size)
+	size, err := self.file.Seek(0, os.SEEK_END)
+	check(err)
+	binary.LittleEndian.PutUint64(position, uint64(size))
 	self.bucket.Put(key, position)
-
-	// Jump to end of the file
-	self.file.Seek(0, 2)
 
 	// Write data size
 	data_size := make([]byte, 4)
 	binary.LittleEndian.PutUint32(data_size, uint32(len(data)))
-	write_size, err := self.file.Write(data_size)
-	if write_size != 4 {
-		panic("how unexpected it is")
-	}
-	check(err)
-	self.size += uint64(write_size)
+	_, err = self.file.Write(data_size)
 
 	// Zip+Write data
 	zip_writer := lzw.NewWriter(self.file, lzw.LSB, 8)
-	write_size, err = zip_writer.Write(data)
-	zip_writer.Close()
+	_, err = zip_writer.Write(data)
 	check(err)
-	self.size += uint64(write_size)
+	zip_writer.Close()
 }
 
 func (self *BlobFile) Read(key []byte) []byte {
-	// Seek to the position stored in bucket
+	// Unknown key, return nil
 	bpos := self.bucket.Get(key)
 	if bpos == nil {
 		return nil
 	}
+
+	// Seek to the position stored in bucket
 	position := binary.LittleEndian.Uint64(bpos)
-	self.file.Seek(int64(position), 0)
+	self.file.Seek(int64(position), os.SEEK_SET)
 
 	// The first 4 bytes encode the size of the following block
 	value := make([]byte, 4)
@@ -233,5 +222,5 @@ func (self *BlobFile) Read(key []byte) []byte {
 }
 
 func (self *BlobFile) Close() {
-	self.file.Close()
+	check(self.file.Close())
 }
