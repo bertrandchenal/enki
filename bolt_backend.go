@@ -1,11 +1,12 @@
 package enki
 
 import (
-	"compress/lzw"
 	"bytes"
+	"compress/lzw"
 	"encoding/binary"
 	"encoding/gob"
 	"github.com/boltdb/bolt"
+	"io"
 	"os"
 	"path"
 )
@@ -154,15 +155,8 @@ type BlobFile struct {
 func NewBlobFile(filePath string, bucket *bolt.Bucket) *BlobFile {
 	var err error
 	var file *os.File
-	if _, err = os.Stat(filePath); err == nil {
-		file, err = os.OpenFile(filePath, os.O_RDWR|os.O_APPEND, 0660)
-		check(err)
-	} else {
-		file, err = os.Create(filePath)
-	}
+	file, err = os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
 	check(err)
-
-
 	return &BlobFile{file, bucket}
 }
 
@@ -216,7 +210,7 @@ func (self *BlobFile) Read(key []byte) []byte {
 
 	data := make([]byte, dataSize)
 	zip_reader := lzw.NewReader(self.file, lzw.LSB, 8)
-	_, err = zip_reader.Read(data)
+	_, err = io.ReadFull(zip_reader, data)
 	check(err)
 	return data
 }
