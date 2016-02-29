@@ -155,7 +155,7 @@ type BlobFile struct {
 func NewBlobFile(filePath string, bucket *bolt.Bucket) *BlobFile {
 	var err error
 	var file *os.File
-	file, err = os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	file, err = os.OpenFile(filePath, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
 	check(err)
 	return &BlobFile{file, bucket}
 }
