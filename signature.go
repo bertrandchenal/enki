@@ -2,6 +2,7 @@ package enki
 
 import (
 	"bytes"
+	"crypto/md5"
 	"encoding/gob"
 	"io"
 )
@@ -37,6 +38,14 @@ func (self *Signature) AddHash(weak WeakHash, strong *StrongHash) {
 		Stronghash: strong,
 	}
 	self.Segments = append(self.Segments, segment)
+}
+
+func (self *Signature) CheckSum() []byte {
+	sgnhash := md5.New()
+	for _, segment := range self.Segments {
+		sgnhash.Write(segment.Stronghash[:])
+	}
+	return sgnhash.Sum(nil)
 }
 
 func (self *Signature) Extract(backend Backend, w io.Writer) {

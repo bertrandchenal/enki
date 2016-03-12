@@ -22,8 +22,9 @@ const (
 
 type FileState struct {
 	Timestamp int64
-	Checksum  []byte
+	SgnSum   []byte
 	Status    int
+	Sgn       *Signature
 }
 
 type DirState struct {
@@ -34,8 +35,10 @@ type DirState struct {
 	root       string
 }
 
-func NewDirState(path string, prevState *DirState) *DirState {
+func NewDirState(path string, backend Backend) *DirState {
 	fstates := make(map[string]FileState)
+	prevState := LastState(backend)
+
 	if prevState == nil {
 		prevState = &DirState{
 			FileStates: make(map[string]FileState),
@@ -47,6 +50,7 @@ func NewDirState(path string, prevState *DirState) *DirState {
 		FileStates: fstates,
 		prevState:  prevState,
 		root:       path,
+		backend:    backend,
 	}
 
 	err := filepath.Walk(path, state.append)
@@ -56,7 +60,7 @@ func NewDirState(path string, prevState *DirState) *DirState {
 	return state
 }
 
-func (self *DirState) append(path string, info os.FileInfo, err error) error {
+func (self *DirState) append(pathname string, info os.FileInfo, err error) error {
 	dotName := info.Name() != "." && filepath.HasPrefix(info.Name(), ".")
 	if info.IsDir() {
 		if dotName {
@@ -67,7 +71,7 @@ func (self *DirState) append(path string, info os.FileInfo, err error) error {
 		return nil
 	}
 
-	relpath, err := filepath.Rel(self.root, path)
+	relpath, err := filepath.Rel(self.root, pathname)
 	check(err)
 
 	prevState, present := self.prevState.FileStates[relpath]
@@ -75,25 +79,29 @@ func (self *DirState) append(path string, info os.FileInfo, err error) error {
 	newState := FileState{}
 	newState.Timestamp = ts
 
-	if !present {
-		// New file
-		newState.Checksum, err = GetChecksum(path)
+	if !present || ts != prevState.Timestamp{
+		// Changed file
+		blob := &Blob{self.backend}
+		abspath := path.Join(self.root, relpath)
+		fd, err := os.Open(abspath)
 		check(err)
-		newState.Status = NEW_FILE
-		self.FileStates[relpath] = newState
+		defer fd.Close()
+		info, err := fd.Stat()
+		check(err)
+		newState.Sgn = blob.Snapshot(fd, info.Size())
 
-	} else if ts != prevState.Timestamp {
-		// Existing file but new timestamp
-		checksum, err := GetChecksum(path)
-		check(err)
-		newState.Checksum = checksum
-		if !bytes.Equal(checksum, prevState.Checksum) {
+		// Compute blob checksum
+		sgnsum := newState.Sgn.CheckSum()
+		if !present {
+			newState.Status = NEW_FILE
+		} else if !bytes.Equal(sgnsum, prevState.SgnSum) {
 			newState.Status = CHANGED_FILE
 		}
 		self.FileStates[relpath] = newState
+
 	} else {
 		// No changes
-		newState.Checksum = prevState.Checksum
+		newState.SgnSum = prevState.SgnSum
 		self.FileStates[relpath] = newState
 	}
 	return nil
@@ -111,7 +119,7 @@ func (self *DirState) Checksum() []byte {
 	for _, path := range keys {
 		file_cs := self.FileStates[path]
 		io.WriteString(checksum, path)
-		checksum.Write(file_cs.Checksum)
+		checksum.Write(file_cs.SgnSum)
 	}
 	return checksum.Sum(nil)
 }
@@ -127,50 +135,42 @@ func (self *DirState) detect_deletion() {
 	}
 }
 
-func (self *DirState) Snapshot(backend Backend) {
+func (self *DirState) Snapshot() {
 	snapped := false
-	for relpath, state := range self.FileStates {
-		if !state.Dirty() {
+	for relpath, fst := range self.FileStates {
+		if !fst.Dirty() {
 			continue
 		}
-		blob := &Blob{backend}
-		abspath := path.Join(self.root, relpath)
-		fd, err := os.Open(abspath)
-		check(err)
-		defer fd.Close()
-
 		log.Print("Add ", relpath)
-		info, err := fd.Stat()
-		check(err)
-		blob.Snapshot(state.Checksum, fd, info.Size())
+		self.backend.WriteSignature(fst.SgnSum, fst.Sgn)
 		snapped = true
 	}
 	if snapped {
-		backend.WriteState(self)
+		self.backend.WriteState(self)
 	}
 }
 
-func (self *DirState) RestorePrev(backend Backend) {
+func (self *DirState) RestorePrev() {
 	var fd io.ReadWriteCloser
 	var err error
 	// Remove files not in prevState
-	for relpath, state := range self.FileStates {
-		if state.Status == NEW_FILE {
+	for relpath, fst := range self.FileStates {
+		if fst.Status == NEW_FILE {
 			abspath := path.Join(self.root, relpath)
 			log.Print("Delete ", relpath)
 			err = os.Remove(abspath)
 			check(err)
 		}
 
-		if !(state.Status == CHANGED_FILE || state.Status == DELETED_FILE) {
+		if !(fst.Status == CHANGED_FILE || fst.Status == DELETED_FILE) {
 			continue
 		}
 
 		// Restore missing & modfied files
-		blob := &Blob{backend}
+		blob := &Blob{self.backend}
 		abspath := path.Join(self.root, relpath)
 
-		if state.Status == DELETED_FILE {
+		if fst.Status == DELETED_FILE {
 			dir := filepath.Dir(abspath)
 			err = os.MkdirAll(dir, 0777)
 			fd, err = os.Create(abspath)
@@ -180,9 +180,9 @@ func (self *DirState) RestorePrev(backend Backend) {
 		check(err)
 		defer fd.Close()
 		log.Print("Restore ", relpath)
-		blob.Restore(state.Checksum, fd)
+		blob.Restore(fst.SgnSum, fd)
 		atime := time.Now()
-		mtime := time.Unix(state.Timestamp, 0)
+		mtime := time.Unix(fst.Timestamp, 0)
 		os.Chtimes(abspath, atime, mtime)
 	}
 }

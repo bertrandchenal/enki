@@ -67,8 +67,7 @@ func showStatus(c *cli.Context) {
 	backend := getBackend(c)
 	defer backend.Close()
 
-	prevState := enki.LastState(backend)
-	currentState := enki.NewDirState(root, prevState)
+	currentState := enki.NewDirState(root, backend)
 
 	for name, _ := range currentState.FileStates {
 		names = append(names, name)
@@ -128,8 +127,8 @@ func restoreSnapshot(c *cli.Context) {
 		prevState = enki.LastState(backend)
 	}
 
-	currentState := enki.NewDirState(root, prevState)
-	currentState.RestorePrev(backend)
+	currentState := enki.NewDirState(root, backend)
+	currentState.RestorePrev()
 }
 
 func createSnapshot(c *cli.Context) {
@@ -137,10 +136,8 @@ func createSnapshot(c *cli.Context) {
 	backend := getBackend(c)
 	defer backend.Close()
 
-	prevState := enki.LastState(backend)
-	currentState := enki.NewDirState(root, prevState)
-
-	currentState.Snapshot(backend)
+	currentState := enki.NewDirState(root, backend)
+	currentState.Snapshot()
 }
 
 func initRepo(c *cli.Context) {

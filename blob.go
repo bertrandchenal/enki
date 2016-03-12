@@ -162,7 +162,7 @@ func (self *Blob) Restore(checksum []byte, w io.Writer) (nb_bytes int) {
 	return 0 // USEFULL ?
 }
 
-func (self *Blob) Snapshot(checksum []byte, fd io.Reader, size int64) {
+func (self *Blob) Snapshot(fd io.Reader, size int64) *Signature {
 	_8k := int64(8 * 1024)
 	_64k := 8 * _8k
 	_512k := 8 * _64k
@@ -174,7 +174,7 @@ func (self *Blob) Snapshot(checksum []byte, fd io.Reader, size int64) {
 
 	sgn, err := self.BuildSignature(fd, blocksize)
 	check(err)
-	self.backend.WriteSignature(checksum, sgn)
+	return sgn
 }
 
 // Returns a strong hash for a given block of data
