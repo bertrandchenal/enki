@@ -24,9 +24,11 @@ type Signature struct {
 }
 
 func (self *Signature) AddData(data []byte) {
+	strong := StrongHash(md5.Sum(data))
 	segment := Segment{
 		Mode: DATA_SGM,
 		Data: data,
+		Stronghash: &strong,
 	}
 	self.Segments = append(self.Segments, segment)
 }

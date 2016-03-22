@@ -97,6 +97,7 @@ func (self *DirState) append(pathname string, info os.FileInfo, err error) error
 		} else if !bytes.Equal(sgnsum, prevState.SgnSum) {
 			newState.Status = CHANGED_FILE
 		}
+		newState.SgnSum = sgnsum
 		self.FileStates[relpath] = newState
 
 	} else {

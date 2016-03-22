@@ -145,7 +145,6 @@ func (self *Blob) BuildSignature(fd io.Reader, blocksize int64) (sgn *Signature,
 			strong := GetStrongHash(fullBlock[:])
 			if self.backend.ReadStrong(strong) != nil {
 				matchFound = true
-				sgn.AddData(oldBlock[lastMatch:blockOffset])
 				sgn.AddHash(weak, strong)
 			}
 		}
