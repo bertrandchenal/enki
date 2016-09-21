@@ -78,12 +78,12 @@ func (self *DirState) append(pathname string, info os.FileInfo, err error) error
 	relpath, err := filepath.Rel(self.root, pathname)
 	check(err)
 
-	prevState, present := self.prevState.FileStates[relpath]
+	prevFile, present := self.prevState.FileStates[relpath]
 	ts := info.ModTime().Unix()
 	newState := FileState{}
 	newState.Timestamp = ts
 
-	if !present || ts != prevState.Timestamp{
+	if !present || ts != prevFile.Timestamp{
 		// Changed file
 		blob := &Blob{self.backend}
 		abspath := path.Join(self.root, relpath)
@@ -98,7 +98,7 @@ func (self *DirState) append(pathname string, info os.FileInfo, err error) error
 		sgnsum := newState.Sgn.CheckSum()
 		if !present {
 			newState.status = NEW_FILE
-		} else if !bytes.Equal(sgnsum, prevState.SgnSum) {
+		} else if !bytes.Equal(sgnsum, prevFile.SgnSum) {
 			newState.status = CHANGED_FILE
 		}
 		newState.SgnSum = sgnsum
@@ -106,7 +106,7 @@ func (self *DirState) append(pathname string, info os.FileInfo, err error) error
 
 	} else {
 		// No changes
-		newState.SgnSum = prevState.SgnSum
+		newState.SgnSum = prevFile.SgnSum
 		self.FileStates[relpath] = newState
 	}
 	return nil
