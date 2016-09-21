@@ -75,15 +75,16 @@ func showStatus(c *cli.Context) {
 	sort.Strings(names)
 
 	for _, name := range names {
-		fstate := currentState.FileStates[name]
+		fst := currentState.FileStates[name]
+		status := fst.GetStatus()
 		switch {
-		case fstate.Status == enki.NEW_FILE:
+		case status == enki.NEW_FILE:
 			prefix = "N"
 			color = ANSI_GREEN
-		case fstate.Status == enki.CHANGED_FILE:
+		case status == enki.CHANGED_FILE:
 			prefix = "M"
 			color = ANSI_BLUE
-		case fstate.Status == enki.DELETED_FILE:
+		case status == enki.DELETED_FILE:
 			prefix = "D"
 			color = ANSI_RED
 		default:

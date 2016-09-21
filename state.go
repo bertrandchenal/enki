@@ -23,7 +23,7 @@ const (
 type FileState struct {
 	Timestamp int64
 	SgnSum   []byte
-	Status    int
+	status    int
 	Sgn       *Signature
 }
 
@@ -97,9 +97,9 @@ func (self *DirState) append(pathname string, info os.FileInfo, err error) error
 		// Compute blob checksum
 		sgnsum := newState.Sgn.CheckSum()
 		if !present {
-			newState.Status = NEW_FILE
+			newState.status = NEW_FILE
 		} else if !bytes.Equal(sgnsum, prevState.SgnSum) {
-			newState.Status = CHANGED_FILE
+			newState.status = CHANGED_FILE
 		}
 		newState.SgnSum = sgnsum
 		self.FileStates[relpath] = newState
@@ -135,7 +135,7 @@ func (self *DirState) detect_deletion() {
 		if present {
 			continue
 		}
-		state.Status = DELETED_FILE
+		state.status = DELETED_FILE
 		self.FileStates[relpath] = state
 	}
 }
@@ -143,14 +143,14 @@ func (self *DirState) detect_deletion() {
 func (self *DirState) Snapshot() {
 	snapped := false
 	for relpath, fst := range self.FileStates {
-		if fst.Status == DELETED_FILE {
+		if fst.status == DELETED_FILE {
 			log.Print("Delete ", relpath)
 			snapped = true
 			delete(self.FileStates, relpath)
 			continue
 		}
 
-		if fst.Status == NEW_FILE || fst.Status == CHANGED_FILE {
+		if fst.status == NEW_FILE || fst.status == CHANGED_FILE {
 			log.Print("Add ", relpath)
 			self.backend.WriteSignature(fst.SgnSum, fst.Sgn)
 			snapped = true
@@ -167,11 +167,11 @@ func (self *DirState) RestorePrev() {
 
 	for relpath, fst := range self.FileStates {
 		// Zero status means unchanged
-		if fst.Status == 0 {
+		if fst.status == 0 {
 			continue
 		}
 
-		if fst.Status == NEW_FILE {
+		if fst.status == NEW_FILE {
 			// Remove files not in prevState
 			abspath := path.Join(self.root, relpath)
 			log.Print("Delete ", relpath)
@@ -185,7 +185,7 @@ func (self *DirState) RestorePrev() {
 		abspath := path.Join(self.root, relpath)
 
 		// Make sure parent dir exists
-		if fst.Status == DELETED_FILE {
+		if fst.status == DELETED_FILE {
 			dir := filepath.Dir(abspath)
 			err = os.MkdirAll(dir, 0777)
 		}
@@ -213,6 +213,10 @@ func (self *DirState) GobDecode(data []byte) {
 	dec := gob.NewDecoder(buf)
 	err := dec.Decode(self)
 	check(err)
+}
+
+func (self *FileState) GetStatus() int {
+	return self.status
 }
 
 func LastState(b Backend) *DirState {
