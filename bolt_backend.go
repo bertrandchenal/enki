@@ -11,10 +11,6 @@ import (
 	"path"
 )
 
-// 14MB is the optimal size for 1MB of entries with false positive
-// rate of 0.001 (and 10 is the optimal number of functions) 1MB
-// of entries referring to block of 64KB is equivalent to 512GB
-
 type BoltBackend struct {
 	weakMap         map[WeakHash]bool
 	blockFile       *BlobFile
