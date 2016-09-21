@@ -23,14 +23,15 @@ type BoltBackend struct {
 
 func NewBoltBackend(dotDir string) Backend {
 	// Create weakMap
+	var err error
 	weakMap := make(map[WeakHash]bool)
 	mapPath := path.Join(dotDir, "weakmap.gob")
 	if fd, err := os.Open(mapPath); err == nil {
 		dec := gob.NewDecoder(fd)
-		if err := dec.Decode(&weakMap); err != nil {
-			check(err)
-		}
+		err := dec.Decode(&weakMap)
+		check(err)
 	}
+	check(err)
 
 	// Create db
 	dbPath := path.Join(dotDir, "indexes.bolt")
@@ -149,9 +150,8 @@ type BlobFile struct {
 }
 
 func NewBlobFile(filePath string, bucket *bolt.Bucket) *BlobFile {
-	var err error
 	var file *os.File
-	file, err = os.OpenFile(filePath, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
+	file, err := os.OpenFile(filePath, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
 	check(err)
 	return &BlobFile{file, bucket}
 }
@@ -179,6 +179,7 @@ func (self *BlobFile) Write(key []byte, data []byte) {
 	data_size := make([]byte, 4)
 	binary.LittleEndian.PutUint32(data_size, uint32(len(data)))
 	_, err = self.file.Write(data_size)
+	check(err)
 
 	// Zip+Write data
 	zip_writer := lzw.NewWriter(self.file, lzw.LSB, 8)
