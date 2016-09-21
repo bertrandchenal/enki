@@ -53,13 +53,15 @@ func (self *Signature) CheckSum() []byte {
 func (self *Signature) Extract(backend Backend, w io.Writer) {
 	for _, segment := range self.Segments {
 		if segment.Mode == DATA_SGM {
-			w.Write(segment.Data)
+			_, err := w.Write(segment.Data)
+			check(err)
 		} else if segment.Mode == HASH_SGM {
 			data := backend.ReadStrong(segment.Stronghash)
 			if data == nil {
 				panic("Hash not found in backend")
 			}
-			w.Write(data)
+			_, err := w.Write(data)
+			check(err)
 		}
 	}
 }

@@ -37,7 +37,7 @@ func (self *Blob) BuildSignature(fd io.Reader, blocksize int64) (sgn *Signature,
 			sgn.AddData(data[:partialReadSize])
 			return sgn, nil
 		} else if err == io.EOF {
-			return nil, nil
+			return sgn, nil
 		} else {
 			panic(err)
 		}

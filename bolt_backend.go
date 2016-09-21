@@ -2,7 +2,7 @@ package enki
 
 import (
 	"bytes"
-	"compress/lzw"
+	"compress/lzw" // See also https://github.com/pierrec/lz4
 	"encoding/binary"
 	"encoding/gob"
 	"github.com/boltdb/bolt"

@@ -67,7 +67,7 @@ func showStatus(c *cli.Context) {
 	backend := getBackend(c)
 	defer backend.Close()
 
-	currentState := enki.NewDirState(root, backend)
+	currentState := enki.NewDirState(root, backend, nil)
 
 	for name, _ := range currentState.FileStates {
 		names = append(names, name)
@@ -100,7 +100,6 @@ func restoreSnapshot(c *cli.Context) {
 	READ_TIME := [...]string{FULL_FMT, YEAR_FMT, MONTH_FMT, DAY_FMT, HOUR_FMT,
 		MIN_FMT}
 
-	root := c.GlobalString("root")
 	backend := getBackend(c)
 	defer backend.Close()
 
@@ -118,16 +117,16 @@ func restoreSnapshot(c *cli.Context) {
 			fmt.Println(err)
 			return
 		}
+
 		prevState = backend.ReadState(ts.Unix())
 		if prevState == nil {
 			fmt.Printf("No snapshot found for '%v'\n", user_time)
 			return
 		}
-	} else {
-		prevState = enki.LastState(backend)
 	}
 
-	currentState := enki.NewDirState(root, backend)
+	root := c.GlobalString("root")
+	currentState := enki.NewDirState(root, backend, prevState)
 	currentState.RestorePrev()
 }
 
@@ -136,7 +135,7 @@ func createSnapshot(c *cli.Context) {
 	backend := getBackend(c)
 	defer backend.Close()
 
-	currentState := enki.NewDirState(root, backend)
+	currentState := enki.NewDirState(root, backend, nil)
 	currentState.Snapshot()
 }
 

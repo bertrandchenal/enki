@@ -8,7 +8,7 @@ import (
 
 func TestScan(t *testing.T) {
 	memoryBackend = NewMemoryBackend().(Backend)
-	dstate := NewDirState(test_data, memoryBackend)
+	dstate := NewDirState(test_data, memoryBackend, nil)
 	// delete unstable files from dstate
 	delete(dstate.FileStates, "random.data")
 	delete(dstate.FileStates, "random.data.extracted")
@@ -22,7 +22,7 @@ func TestScan(t *testing.T) {
 
 func TestGob(t *testing.T) {
 	memoryBackend = NewMemoryBackend().(Backend)
-	dstate := NewDirState(test_data, memoryBackend)
+	dstate := NewDirState(test_data, memoryBackend, nil)
 	dstatecopy := &DirState{}
 	dstatecopy.GobDecode(dstate.GobEncode())
 	for key, fs := range dstate.FileStates {
