@@ -7,6 +7,11 @@ their hashes are stored in a bolt database (saved in the `.nk`
 sub-directory)
 
 
+## Install
+
+`go get bitbucket.org/bertrandchenal/enki/nk`
+
+
 ## Usage example
 
 ```
