@@ -99,10 +99,12 @@ contains all the signatures, a signature is a list of the blocks
 hashes that compose the file.
 
 The `indexes.bolt` is a bolt db that contains
+
   - a map of md5 hashes to their respective block offset in the block file
   - a list of directory state (each state is the list of all the files
     and their hashes)
   - a map of file hashes to their signatures offset.
+
 
 The `weakmap.gob` file contains a list of weak checksums of all the
 blocks. This act as a bloom filter wrt to the bolt db: If a weak
